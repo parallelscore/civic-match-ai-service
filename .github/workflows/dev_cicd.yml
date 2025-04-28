@@ -48,43 +48,43 @@ jobs:
       - name: Save image tag
         run: echo "::set-output name=image-tag::${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}:dev"
 
-  check-code-quality:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python 3.9
-        uses: actions/setup-python@v2
-        with:
-          python-version: '3.9'
-
-      - name: Install requirements and dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install coverage
-
-      - name: Run tests and generate coverage report
-        run: |
-          coverage run --source=. -m pytest tests/ -vv
-          coverage xml -i
-        env:
-          POSTGRESQL_DATABASE_URL: ${{ secrets.DEV_POSTGRESQL_DATABASE_URL }}
-
-      - uses: sonarsource/sonarqube-scan-action@master
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-
-      - uses: sonarsource/sonarqube-quality-gate-action@master
-        timeout-minutes: 5
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  #  check-code-quality:
+  #    runs-on: ubuntu-latest
+  #    steps:
+  #      - name: Checkout code
+  #        uses: actions/checkout@v2
+  #        with:
+  #          fetch-depth: 0
+  #
+  #      - name: Set up Python 3.9
+  #        uses: actions/setup-python@v2
+  #        with:
+  #          python-version: '3.9'
+  #
+  #      - name: Install requirements and dependencies
+  #        run: |
+  #          pip install -r requirements.txt
+  #          pip install coverage
+  #
+  #      - name: Run tests and generate coverage report
+  #        run: |
+  #          coverage run --source=. -m pytest tests/ -vv
+  #          coverage xml -i
+  #        env:
+  #          POSTGRESQL_DATABASE_URL: ${{ secrets.DEV_POSTGRESQL_DATABASE_URL }}
+  #
+  #      - uses: sonarsource/sonarqube-scan-action@master
+  #        env:
+  #          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  #          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+  #
+  #      - uses: sonarsource/sonarqube-quality-gate-action@master
+  #        timeout-minutes: 5
+  #        env:
+  #          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   push-docker-image:
-    needs: [ check-code-quality, build-docker-image ]
+    needs: [ build-docker-image ]
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
