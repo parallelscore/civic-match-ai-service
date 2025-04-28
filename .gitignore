@@ -1,0 +1,10 @@
+.idea
+bin
+__pycache__
+
+.env
+.env.dev
+.env.prod
+.env.demo
+.coverage
+.python-version
