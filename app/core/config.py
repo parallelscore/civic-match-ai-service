@@ -16,6 +16,10 @@ class BaseConfig(BaseSettings):
 
     POSTGRESQL_DATABASE_URL: str = Field(..., json_schema_extra={'env': 'POSTGRESQL_DATABASE_URL'})
 
+    BACKEND_API_URL: str = Field(..., json_schema_extra={'env': 'BACKEND_API_URL'})
+    USE_MOCK_BACKEND_API_URL: bool = Field(False, json_schema_extra={'env': 'USE_MOCK_BACKEND_API'})
+    MOCK_BACKEND_API_URL: str = Field(..., json_schema_extra={'env': 'MOCK_BACKEND_API'})
+
     model_config: ClassVar[ConfigDict] = ConfigDict(
         arbitrary_types_allowed=True,
     )
