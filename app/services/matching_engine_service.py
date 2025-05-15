@@ -2,11 +2,11 @@ import math
 from datetime import datetime
 from typing import Any, Tuple
 
-from app.schemas.candidate_schema import CandidateResponseSchema
-from app.schemas.voters_schema import CandidateMatchSchema, MatchResultsResponseSchema, IssueMatchDetailSchema
+from app.utils.logging_util import setup_logger
 from app.schemas.voters_schema import VoterSubmissionSchema
 from app.services.candidate_service import candidate_service
-from app.utils.logging_util import setup_logger
+from app.schemas.candidate_schema import CandidateResponseSchema
+from app.schemas.voters_schema import CandidateMatchSchema, MatchResultsResponseSchema, IssueMatchDetailSchema
 
 
 class MatchingEngine:
@@ -99,7 +99,7 @@ class MatchingEngine:
             )
 
         # Categorize questions by issue/topic
-        issue_categories = self._categorize_questions(common_questions)
+        issue_categories = self._categorize_questions(common_questions, voter_responses, candidate_responses)
 
         # Calculate issue match details and scores
         issue_matches = []
@@ -157,23 +157,41 @@ class MatchingEngine:
             issue_matches=issue_matches
         )
 
-    def _categorize_questions(self, questions):
+    def _categorize_questions(self, common_questions, voter_responses, candidate_responses):
         """
-        Categorize questions into issue categories.
+        Categorize questions into issue categories based on the category field in responses.
 
-        For a real implementation, you would have a more sophisticated categorization system.
-        This is a simplified example that categorizes based on keywords in the questions.
+        Args:
+            common_questions: Set of common questions between voter and candidate
+            voter_responses: Dictionary mapping question text to voter response
+            candidate_responses: Dictionary mapping question text to candidate response
+
+        Returns:
+            Dictionary mapping categories to lists of questions
         """
-        categories = {
-            "Education Access": [],
-            "Student Support": [],
-            "School Funding": [],
-            "Vocational Training": [],
-            "School Safety": [],
-            "Community Engagement": [],
-            "Educational Progress": []
-        }
+        categories = {}
 
+        for question in common_questions:
+            # Get the category from voter response
+            voter_response = voter_responses[question]
+            category = getattr(voter_response, 'category', None)
+
+            # If no category is provided, use a more readable name based on keywords
+            if not category:
+                category = self._determine_category_from_keywords(question)
+
+            # Add the question to the appropriate category
+            if category not in categories:
+                categories[category] = []
+            categories[category].append(question)
+
+        return categories
+
+    def _determine_category_from_keywords(self, question):
+        """
+        Determine category based on keywords in the question text.
+        This is a fallback for when no category is provided.
+        """
         keywords = {
             "language immersion": "Education Access",
             "access": "Education Access",
@@ -194,25 +212,13 @@ class MatchingEngine:
             "progress": "Educational Progress"
         }
 
-        # Default category for questions that don't match any keywords
-        default_category = "Other Issues"
+        # Check if any keyword is in the question
+        for keyword, category in keywords.items():
+            if keyword.lower() in question.lower():
+                return category
 
-        for question in questions:
-            assigned = False
-
-            # Check if any keyword is in the question
-            for keyword, category in keywords.items():
-                if keyword.lower() in question.lower():
-                    categories.setdefault(category, []).append(question)
-                    assigned = True
-                    break
-
-            # If no keyword matched, put in the default category
-            if not assigned:
-                categories.setdefault(default_category, []).append(question)
-
-        # Filter out empty categories
-        return {k: v for k, v in categories.items() if v}
+        # Default category if no keywords match
+        return "Other Issues"
 
     def _get_alignment_level(self, score):
         """Convert a numeric score to an alignment level string."""
