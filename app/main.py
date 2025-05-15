@@ -4,6 +4,8 @@ import uvicorn
 from fastapi import FastAPI
 
 from app.api.models.model_init import create_all_tables
+from app.api.routes.matching_engine import MatchingEngineRouter
+from app.api.routes.mock_candidates_response import MockCandidatesResponseRouter
 from app.api.routes.server_metrics import ServerMetrics
 from app.core.config import settings
 from app.core.middleware import register_middlewares
@@ -26,8 +28,14 @@ def create_app() -> FastAPI:
 
     server_metrics_router = ServerMetrics(app).router
 
+    matching_engine_router = MatchingEngineRouter().router_manager.router
+    mock_candidates_response_router = MockCandidatesResponseRouter().router_manager.router
+
     # Register the routers
     app.include_router(server_metrics_router)
+
+    app.include_router(matching_engine_router, prefix=settings.API_V1_STR)
+    app.include_router(mock_candidates_response_router, prefix=settings.API_V1_STR)
 
     return app
 
