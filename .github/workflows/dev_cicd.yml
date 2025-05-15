@@ -44,6 +44,9 @@ jobs:
           load: true
           build-args: |
             POSTGRESQL_DATABASE_URL=${{ secrets.DEV_POSTGRESQL_DATABASE_URL }}
+            BACKEND_API_URL=${{ secrets.DEV_BACKEND_API_URL }}
+            USE_MOCK_BACKEND_API_URL=${{ secrets.USE_MOCK_BACKEND_API_URL }}
+            MOCK_BACKEND_API_URL=${{ secrets.MOCK_BACKEND_API_URL }}
 
       - name: Save image tag
         run: echo "::set-output name=image-tag::${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}:dev"
@@ -103,6 +106,9 @@ jobs:
             ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}:dev
           build-args: |
             POSTGRESQL_DATABASE_URL=${{ secrets.DEV_POSTGRESQL_DATABASE_URL }}
+            BACKEND_API_URL=${{ secrets.DEV_BACKEND_API_URL }}
+            USE_MOCK_BACKEND_API_URL=${{ secrets.USE_MOCK_BACKEND_API_URL }}
+            MOCK_BACKEND_API_URL=${{ secrets.MOCK_BACKEND_API_URL }}
 
   deploy-to-kubernetes:
     needs: push-docker-image
