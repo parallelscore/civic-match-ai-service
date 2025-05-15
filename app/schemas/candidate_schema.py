@@ -17,8 +17,3 @@ class CandidateResponseSchema(BaseModel):
     candidate_id: str
     election_id: str
     responses: List[CandidateResponseItemSchema]
-
-
-class CandidatesResponse(BaseModel):
-    """Schema for the response containing all candidates."""
-    candidates: List[CandidateResponseSchema]

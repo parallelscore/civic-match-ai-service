@@ -1,8 +1,9 @@
+import math
 from datetime import datetime
 from typing import Any, Tuple
 
 from app.schemas.candidate_schema import CandidateResponseSchema
-from app.schemas.match_result_schema import MatchResultSchema, MatchResultsResponseSchema, MatchResultDetailSchema
+from app.schemas.voters_schema import CandidateMatchSchema, MatchResultsResponseSchema, IssueMatchDetailSchema
 from app.schemas.voters_schema import VoterSubmissionSchema
 from app.services.candidate_service import candidate_service
 from app.utils.logging_util import setup_logger
@@ -20,6 +21,7 @@ class MatchingEngine:
     """
 
     def __init__(self):
+
         self.logger = setup_logger(__name__)
 
     async def process_voter_submission(self, submission: VoterSubmissionSchema) -> MatchResultsResponseSchema:
@@ -55,7 +57,7 @@ class MatchingEngine:
             match_results.append(match_result)
 
         # Step 3: Sort matches by overall score (descending)
-        match_results.sort(key=lambda x: x.overall_score, reverse=True)
+        match_results.sort(key=lambda x: x.match_percentage, reverse=True)
 
         return MatchResultsResponseSchema(
             voter_id=submission.citizen_id,
@@ -65,7 +67,7 @@ class MatchingEngine:
         )
 
     def _calculate_match(self, voter_submission: VoterSubmissionSchema,
-                         candidate: CandidateResponseSchema) -> MatchResultSchema:
+                         candidate: CandidateResponseSchema) -> CandidateMatchSchema:
         """
         Calculate a match between a voter and a candidate.
 
@@ -78,107 +80,161 @@ class MatchingEngine:
         """
         # Organization by question
         voter_responses = {r.question: r for r in voter_submission.responses}
-
-        self.logger.info(f"Voter responses: {voter_responses}")
-
         candidate_responses = {r.question: r for r in candidate.responses}
-
-        self.logger.info(f"Candidate responses: {candidate_responses}")
 
         # Find common questions
         common_questions = set(voter_responses.keys()).intersection(set(candidate_responses.keys()))
-
-        self.logger.info(f"Common questions: {common_questions}")
         self.logger.info(
             f"Found {len(common_questions)} common questions between voter and candidate {candidate.candidate_id}")
 
         if not common_questions:
             # No common questions, no match
-            return MatchResultSchema(
+            return CandidateMatchSchema(
                 candidate_id=candidate.candidate_id,
-                overall_score=0.0,
-                details=[],
+                candidate_name=getattr(candidate, "name", candidate.candidate_id),
+                candidate_title="Candidate",
+                match_percentage=0,
                 top_aligned_issues=[],
-                top_misaligned_issues=[]
+                issue_matches=[]
             )
 
-        # Group by categories (using the question text as a category for now)
-        categories = {}
-        scores_by_question = {}
+        # Categorize questions by issue/topic
+        issue_categories = self._categorize_questions(common_questions)
 
-        for question in common_questions:
-            voter_answer = voter_responses[question].answer
-            candidate_answer = candidate_responses[question].answer
+        # Calculate issue match details and scores
+        issue_matches = []
+        issue_scores = {}
 
-            # Calculate similarity for this question
-            similarity, explanation = self._calculate_similarity(
-                voter_answer,
-                candidate_answer,
-                self._determine_response_type(voter_answer)
-            )
+        for issue, questions in issue_categories.items():
+            # Calculate the average score for this issue
+            scores = []
+            for question in questions:
+                voter_answer = voter_responses[question].answer
+                candidate_answer = candidate_responses[question].answer
 
-            category = "General"  # Default category
-
-            # Initialize a category if needed
-            if category not in categories:
-                categories[category] = {
-                    "scores": [],
-                    "details": []
-                }
-
-            # Add score to category
-            categories[category]["scores"].append(similarity)
-
-            # Add detail for this question
-            categories[category]["details"].append({
-                "question": question,
-                "voter_answer": voter_answer,
-                "candidate_answer": candidate_answer,
-                "score": similarity,
-                "explanation": explanation
-            })
-
-            # Keep track of scores by question for top issues
-            scores_by_question[question] = similarity
-
-        # Calculate category scores
-        category_details = []
-        for category, data in categories.items():
-            avg_score = sum(data["scores"]) / len(data["scores"]) if data["scores"] else 0
-
-            # Determine alignment level
-            if avg_score >= 0.7:
-                alignment = "high"
-            elif avg_score >= 0.4:
-                alignment = "medium"
-            else:
-                alignment = "low"
-
-            category_details.append(
-                MatchResultDetailSchema(
-                    category=category,
-                    score=avg_score,
-                    alignment=alignment,
-                    key_issues=data["details"]
+                similarity, _ = self._calculate_similarity(
+                    voter_answer,
+                    candidate_answer,
+                    self._determine_response_type(voter_answer)
                 )
+                scores.append(similarity)
+
+            # Calculate issue score
+            avg_score = sum(scores) / len(scores) if scores else 0
+            issue_scores[issue] = avg_score
+
+            # Get an alignment level
+            alignment = self._get_alignment_level(avg_score)
+
+            # For display purposes, select the first question's responses
+            sample_question = questions[0]
+            voter_position = self._format_position(voter_responses[sample_question].answer)
+            candidate_position = self._format_position(candidate_responses[sample_question].answer)
+
+            # Create issue match detail
+            issue_match = IssueMatchDetailSchema(
+                issue=issue,
+                alignment=alignment,
+                voter_position=voter_position,
+                candidate_position=candidate_position
             )
+            issue_matches.append(issue_match)
 
-        # Calculate overall score as average of all scores
-        all_scores = [score for data in categories.values() for score in data["scores"]]
-        overall_score = sum(all_scores) / len(all_scores) if all_scores else 0
+        # Calculate overall match percentage (0-100)
+        overall_score = sum(issue_scores.values()) / len(issue_scores) if issue_scores else 0
+        match_percentage = math.floor(overall_score * 100)
 
-        # Find top aligned and misaligned issues
-        sorted_questions = sorted(scores_by_question.items(), key=lambda x: x[1], reverse=True)
-        top_aligned = [q for q, s in sorted_questions[:3] if s >= 0.6]
-        top_misaligned = [q for q, s in sorted_questions[-3:] if s < 0.4]
+        # Get top-aligned issues (up to 3)
+        sorted_issues = sorted(issue_scores.items(), key=lambda x: x[1], reverse=True)
+        top_aligned_issues = [issue for issue, score in sorted_issues[:3] if score >= 0.6]
 
-        return MatchResultSchema(
+        return CandidateMatchSchema(
             candidate_id=candidate.candidate_id,
-            overall_score=overall_score,
-            details=category_details,
-            top_aligned_issues=top_aligned,
-            top_misaligned_issues=top_misaligned
+            candidate_name=getattr(candidate, "name", candidate.candidate_id),
+            candidate_title="Senate Candidate",  # Default title can be customized
+            match_percentage=match_percentage,
+            top_aligned_issues=top_aligned_issues,
+            issue_matches=issue_matches
         )
+
+    def _categorize_questions(self, questions):
+        """
+        Categorize questions into issue categories.
+
+        For a real implementation, you would have a more sophisticated categorization system.
+        This is a simplified example that categorizes based on keywords in the questions.
+        """
+        categories = {
+            "Education Access": [],
+            "Student Support": [],
+            "School Funding": [],
+            "Vocational Training": [],
+            "School Safety": [],
+            "Community Engagement": [],
+            "Educational Progress": []
+        }
+
+        keywords = {
+            "language immersion": "Education Access",
+            "access": "Education Access",
+            "mental health": "Student Support",
+            "counselors": "Student Support",
+            "resources for students": "Student Support",
+            "funding": "School Funding",
+            "budget": "School Funding",
+            "vocational": "Vocational Training",
+            "career": "Vocational Training",
+            "technical education": "Vocational Training",
+            "sro": "School Safety",
+            "officers": "School Safety",
+            "safe": "School Safety",
+            "community": "Community Engagement",
+            "families": "Community Engagement",
+            "improved": "Educational Progress",
+            "progress": "Educational Progress"
+        }
+
+        # Default category for questions that don't match any keywords
+        default_category = "Other Issues"
+
+        for question in questions:
+            assigned = False
+
+            # Check if any keyword is in the question
+            for keyword, category in keywords.items():
+                if keyword.lower() in question.lower():
+                    categories.setdefault(category, []).append(question)
+                    assigned = True
+                    break
+
+            # If no keyword matched, put in the default category
+            if not assigned:
+                categories.setdefault(default_category, []).append(question)
+
+        # Filter out empty categories
+        return {k: v for k, v in categories.items() if v}
+
+    def _get_alignment_level(self, score):
+        """Convert a numeric score to an alignment level string."""
+        if score >= 0.8:
+            return "Strongly Aligned"
+        elif score >= 0.5:
+            return "Moderately Aligned"
+        else:
+            return "Weakly Aligned"
+
+    def _format_position(self, answer):
+        """Format an answer into a readable position statement."""
+        if isinstance(answer, bool):
+            return "Yes" if answer else "No"
+        elif isinstance(answer, list):
+            return ", ".join(answer)
+        else:
+            # Limit text length for display
+            text = str(answer)
+            if len(text) > 100:
+                return text[:97] + "..."
+            return text
 
     def _determine_response_type(self, answer: Any) -> str:
         """Determine the response type based on the answer."""
@@ -245,29 +301,49 @@ class MatchingEngine:
                 explanation = "Different priorities"
 
         else:  # text responses
-            # For text responses, we use a simple approach for MVP
-            # In a production system; this would use NLP techniques
+            # For text responses, try to check for agreement/disagreement phrases
             voter_text = str(voter_answer).lower()
             candidate_text = str(candidate_answer).lower()
 
-            # Simple text similarity: % of words in common
-            voter_words = set(voter_text.split())
-            candidate_words = set(candidate_text.split())
-
-            if not voter_words or not candidate_words:
-                similarity = 0.0
-                explanation = "One or both responses are empty"
+            # Check for the exact match first
+            if voter_text == candidate_text:
+                similarity = 1.0
+                explanation = "Exact text match"
             else:
-                common_words = voter_words.intersection(candidate_words)
-                all_words = voter_words.union(candidate_words)
-                similarity = len(common_words) / len(all_words)
+                # Simple text similarity: % of words in common
+                voter_words = set(voter_text.split())
+                candidate_words = set(candidate_text.split())
 
-                if similarity >= 0.7:
-                    explanation = "High text similarity"
-                elif similarity >= 0.3:
-                    explanation = "Moderate text similarity"
+                if not voter_words or not candidate_words:
+                    similarity = 0.0
+                    explanation = "One or both responses are empty"
                 else:
-                    explanation = "Low text similarity"
+                    common_words = voter_words.intersection(candidate_words)
+                    all_words = voter_words.union(candidate_words)
+                    similarity = len(common_words) / len(all_words)
+
+                    # Additional check for agreement words
+                    agreement_words = {"agree", "support", "yes", "approve", "favor"}
+                    disagreement_words = {"disagree", "oppose", "no", "disapprove", "against"}
+
+                    voter_agrees = any(word in voter_text for word in agreement_words)
+                    voter_disagrees = any(word in voter_text for word in disagreement_words)
+                    candidate_agrees = any(word in candidate_text for word in agreement_words)
+                    candidate_disagrees = any(word in candidate_text for word in disagreement_words)
+
+                    # Boost similarity if both agree or both disagree
+                    if (voter_agrees and candidate_agrees) or (voter_disagrees and candidate_disagrees):
+                        similarity = max(similarity, 0.8)
+                    # Reduce similarity if one agrees and one disagrees
+                    elif (voter_agrees and candidate_disagrees) or (voter_disagrees and candidate_agrees):
+                        similarity = min(similarity, 0.2)
+
+                    if similarity >= 0.7:
+                        explanation = "High text similarity"
+                    elif similarity >= 0.3:
+                        explanation = "Moderate text similarity"
+                    else:
+                        explanation = "Low text similarity"
 
         return similarity, explanation
 

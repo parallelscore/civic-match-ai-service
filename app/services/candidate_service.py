@@ -73,16 +73,3 @@ class CandidateService:
 
 # Create an instance for dependency injection
 candidate_service = CandidateService()
-
-
-# Example usage:
-async def main():
-    service = CandidateService()
-    candidates = await service.get_candidates_for_election("election_id")
-    print(candidates)
-
-
-if __name__ == "__main__":
-    import asyncio
-
-    asyncio.run(main())

@@ -1,0 +1,51 @@
+{
+  "election_id": "e001",
+  "citizen_id": "v001",
+  "responses": [
+    {
+      "question_id": "q001",
+      "answer": "Strongly Agree",
+      "question": "Should your neighborhood students have access to a language immersion middle school within a 30-minute commute?"
+    },
+    {
+      "question_id": "q002",
+      "question": "Which educational programs should receive increased funding? (Select all that apply)",
+      "answer": [
+        "STEM initiatives",
+        "Special education",
+        "Arts and music"
+      ]
+    },
+    {
+      "question_id": "q003",
+      "question": "Do you think it's essential for the your neighborhood council member to prioritize mental health resources for students?",
+      "answer": "Strongly Agree"
+    },
+    {
+      "question_id": "q004",
+      "question": "Do you believe School Resource Officers (SROs) effectively keep your neighborhood schools safe?",
+      "answer": "Strongly Disagree"
+    },
+    {
+      "question_id": "q005",
+      "question": "Should your your neighborhood council member actively pass legislation benefiting your neighborhood students and families?",
+      "answer": "Agree"
+    },
+    {
+      "question_id": "q006",
+      "question": "Has education in your neighborhood improved over the last 20 years?",
+      "answer": "Disagree"
+    },
+    {
+      "question_id": "q007",
+      "question": "What is your top priority in your neighborhood",
+      "answer": "Housing"
+    },
+    {
+      "question_id": "q008",
+      "answer": "Better community engagement and transparency in local government",
+      "question": "What specific improvements would you like to see in your neighborhood?"
+    }
+  ],
+  "completedAt": "2025-05-13T09:30:45.123Z"
+}
