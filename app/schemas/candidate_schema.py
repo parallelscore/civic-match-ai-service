@@ -1,6 +1,5 @@
-from typing import List, Union, Dict, Any
-
 from pydantic import BaseModel
+from typing import List, Union, Dict, Any
 
 
 class CandidateResponseItemSchema(BaseModel):

@@ -1,7 +1,6 @@
 from datetime import datetime
-from typing import List, Union, Dict, Any
-
 from pydantic import BaseModel, Field
+from typing import List, Union, Dict, Any, Optional
 
 
 class VoterResponseItemSchema(BaseModel):
@@ -9,6 +8,7 @@ class VoterResponseItemSchema(BaseModel):
     question_id: str
     question: str
     answer: Union[str, bool, List[str], Dict[str, Any]]
+    category: Optional[str] = None
 
 
 class VoterSubmissionSchema(BaseModel):
