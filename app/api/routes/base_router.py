@@ -1,6 +1,5 @@
-from typing import Callable, List, Optional
-
 from fastapi import APIRouter, status
+from typing import Callable, List, Optional
 
 from app.utils.logging_util import setup_logger
 
