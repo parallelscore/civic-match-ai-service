@@ -105,11 +105,11 @@ def sample_match_result():
 class TestMatchingEngineRouter:
     """Test the matching engine router."""
 
-    @patch('app.api.routes.matching_engine.matching_engine.process_voter_submission')
+    @patch('app.api.routes.matching_engine.matching_engine.process_voter_submission', new_callable=AsyncMock)
     def test_submit_voter_responses(self, mock_process_submission, test_app, sample_voter_submission, sample_match_result):
         """Test the submit_voter_responses endpoint with valid data."""
         # Mock the process_voter_submission method to return our sample result
-        mock_process_submission.return_value = AsyncMock(return_value=sample_match_result)()
+        mock_process_submission.return_value = sample_match_result
 
         # Make the request
         response = test_app.post("/api/v1/matching_engine", json=sample_voter_submission)
