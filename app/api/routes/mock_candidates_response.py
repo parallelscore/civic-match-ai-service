@@ -1,7 +1,7 @@
 from fastapi import status
 
-from app.api.routes.base_router import RouterManager
 from app.utils.logging_util import setup_logger
+from app.api.routes.base_router import RouterManager
 
 
 class MockCandidatesResponseRouter:
@@ -36,35 +36,41 @@ class MockCandidatesResponseRouter:
                 "responses": [
                     {
                         "id": "r001",
-                        "question": "Should your neighborhood students have access to a language immersion middle school within a 30-minute commute?",
+                        "question": "Should your neighborhood students have access to a language immersion middle "
+                                    "school within a 30-minute commute?",
                         "answer": "Strongly Agree",
-                        "comment": "Language immersion programs are crucial for our students' future success in a global economy.",
+                        "comment": "Language immersion programs are crucial for our students' future success in a "
+                                   "global economy.",
                         "election_id": election_id
                     },
                     {
                         "id": "r002",
-                        "question": "Which educational programs should receive increased funding? (Select all that apply)",
+                        "question": "Which educational programs should receive increased funding? "
+                                    "(Select all that apply)",
                         "answer": ["STEM initiatives", "Arts and music", "Special education"],
                         "comment": "We need balanced funding across multiple educational areas.",
                         "election_id": election_id
                     },
                     {
                         "id": "r003",
-                        "question": "Do you think it's essential for the your neighborhood council member to prioritize mental health resources for students?",
+                        "question": "Do you think it's essential for the your neighborhood council member to prioritize"
+                                    "mental health resources for students?",
                         "answer": "Strongly Agree",
                         "comment": "Student mental health must be a top priority for all schools.",
                         "election_id": election_id
                     },
                     {
                         "id": "r004",
-                        "question": "Do you believe School Resource Officers (SROs) effectively keep your neighborhood schools safe?",
+                        "question": "Do you believe School Resource Officers (SROs) effectively keep your neighborhood "
+                                    "schools safe?",
                         "answer": "Disagree",
                         "comment": "We need more community-based approaches to school safety.",
                         "election_id": election_id
                     },
                     {
                         "id": "r005",
-                        "question": "Should your your neighborhood council member actively pass legislation benefiting your neighborhood students and families?",
+                        "question": "Should your your neighborhood council member actively pass legislation benefiting "
+                                    "your neighborhood students and families?",
                         "answer": "Strongly Agree",
                         "comment": "Proactive legislation is essential for improving education.",
                         "election_id": election_id
@@ -99,35 +105,40 @@ class MockCandidatesResponseRouter:
                 "responses": [
                     {
                         "id": "r009",
-                        "question": "Should your neighborhood students have access to a language immersion middle school within a 30-minute commute?",
+                        "question": "Should your neighborhood students have access to a language immersion middle "
+                                    "school within a 30-minute commute?",
                         "answer": "Disagree",
                         "comment": "We should focus on core academics before expanding to immersion programs.",
                         "election_id": election_id
                     },
                     {
                         "id": "r010",
-                        "question": "Which educational programs should receive increased funding? (Select all that apply)",
+                        "question": "Which educational programs should receive increased funding? "
+                                    "(Select all that apply)",
                         "answer": ["STEM initiatives", "Vocational training"],
                         "comment": "Technical skills are critical for future workforce needs.",
                         "election_id": election_id
                     },
                     {
                         "id": "r011",
-                        "question": "Do you think it's essential for the your neighborhood council member to prioritize mental health resources for students?",
+                        "question": "Do you think it's essential for the your neighborhood council member to prioritize "
+                                    "mental health resources for students?",
                         "answer": "Agree",
                         "comment": "Mental health support is important but must be balanced with other priorities.",
                         "election_id": election_id
                     },
                     {
                         "id": "r012",
-                        "question": "Do you believe School Resource Officers (SROs) effectively keep your neighborhood schools safe?",
+                        "question": "Do you believe School Resource Officers (SROs) effectively keep your neighborhood "
+                                    "schools safe?",
                         "answer": "Strongly Agree",
                         "comment": "SROs are an essential part of school safety.",
                         "election_id": election_id
                     },
                     {
                         "id": "r013",
-                        "question": "Should your your neighborhood council member actively pass legislation benefiting your neighborhood students and families?",
+                        "question": "Should your your neighborhood council member actively pass legislation benefiting "
+                                    "your neighborhood students and families?",
                         "answer": "Agree",
                         "comment": "Legislation is important but should be carefully considered.",
                         "election_id": election_id
@@ -162,35 +173,40 @@ class MockCandidatesResponseRouter:
                 "responses": [
                     {
                         "id": "r017",
-                        "question": "Should your neighborhood students have access to a language immersion middle school within a 30-minute commute?",
+                        "question": "Should your neighborhood students have access to a language immersion middle "
+                                    "school within a 30-minute commute?",
                         "answer": "Strongly Agree",
                         "comment": "Multilingual education provides crucial advantages in today's world.",
                         "election_id": election_id
                     },
                     {
                         "id": "r018",
-                        "question": "Which educational programs should receive increased funding? (Select all that apply)",
+                        "question": "Which educational programs should receive increased funding? "
+                                    "(Select all that apply)",
                         "answer": ["Arts and music", "Special education", "After-school programs"],
                         "comment": "We need a holistic approach that supports the whole child.",
                         "election_id": election_id
                     },
                     {
                         "id": "r019",
-                        "question": "Do you think it's essential for the your neighborhood council member to prioritize mental health resources for students?",
+                        "question": "Do you think it's essential for the your neighborhood council member to "
+                                    "prioritize mental health resources for students?",
                         "answer": "Strongly Agree",
                         "comment": "Mental health is the foundation of academic success and student wellbeing.",
                         "election_id": election_id
                     },
                     {
                         "id": "r020",
-                        "question": "Do you believe School Resource Officers (SROs) effectively keep your neighborhood schools safe?",
+                        "question": "Do you believe School Resource Officers (SROs) effectively keep your neighborhood "
+                                    "schools safe?",
                         "answer": "Strongly Disagree",
                         "comment": "We need counselors, not officers. Community-based safety approaches work better.",
                         "election_id": election_id
                     },
                     {
                         "id": "r021",
-                        "question": "Should your your neighborhood council member actively pass legislation benefiting your neighborhood students and families?",
+                        "question": "Should your your neighborhood council member actively pass legislation benefiting "
+                                    "your neighborhood students and families?",
                         "answer": "Strongly Agree",
                         "comment": "Bold legislative action is needed to address systemic inequities.",
                         "election_id": election_id
