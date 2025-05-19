@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Civic-Match AI Server Metrics Dashboard</title>
+    <style>
+        :root {
+            --green-primary: #0CAA41;
+            --orange-accent: #FF9500;
+            --dark-blue-secondary: #1A2C56;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f7;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .title {
+            margin: 0;
+            color: var(--dark-blue-secondary);
+        }
+
+        .subtitle {
+            margin: 0.5rem 0 0;
+            color: #666;
+            font-weight: normal;
+        }
+
+        .btn {
+            background-color: var(--green-primary);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn:hover {
+            background-color: #099035;
+        }
+
+        .btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            padding: 1.5rem;
+        }
+
+        .card-row-2 {
+            grid-column: span 2;
+        }
+
+        .card-row-4 {
+            grid-column: span 4;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 1.2rem;
+            margin: 0;
+            color: var(--dark-blue-secondary);
+        }
+
+        .card-icon {
+            color: var(--green-primary);
+            font-size: 1.5rem;
+        }
+
+        .stat {
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 0.5rem 0;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .progress-container {
+            width: 100%;
+            background-color: #eee;
+            border-radius: 10px;
+            margin: 0.5rem 0;
+            height: 8px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            border-radius: 10px;
+            transition: width 0.3s ease;
+        }
+
+        .progress-green {
+            background-color: var(--green-primary);
+        }
+
+        .progress-orange {
+            background-color: var(--orange-accent);
+        }
+
+        .progress-red {
+            background-color: #FF3B30;
+        }
+
+        .percent {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .value-green {
+            color: var(--green-primary);
+        }
+
+        .value-orange {
+            color: var(--orange-accent);
+        }
+
+        .value-red {
+            color: #FF3B30;
+        }
+
+        .inner-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .inner-card {
+            background-color: #f5f5f7;
+            border-radius: 6px;
+            padding: 1rem;
+        }
+
+        .inner-card-title {
+            font-size: 0.85rem;
+            color: #666;
+            margin: 0 0 0.5rem;
+        }
+
+        .inner-card-value {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .section-title {
+            font-size: 1rem;
+            margin: 1.5rem 0 1rem;
+            color: #333;
+        }
+
+        .loading-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 300px;
+        }
+
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: var(--green-primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 300px;
+            text-align: center;
+        }
+
+        .error-icon {
+            color: #FF3B30;
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .error-message {
+            color: #666;
+            margin-bottom: 1rem;
+        }
+
+        #dashboardContent {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .card-row-2, .card-row-4 {
+                grid-column: span 1;
+            }
+
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .header button {
+                margin-top: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div>
+            <h1 class="title">Civic-Match AI Server Metrics Dashboard</h1>
+            <p class="subtitle" id="lastUpdated">Last updated: Never</p>
+        </div>
+        <button id="refreshButton" class="btn">
+            <span id="refreshIcon">↻</span> Refresh
+        </button>
+    </div>
+
+    <div id="loadingContainer" class="loading-container">
+        <div class="spinner"></div>
+        <p>Loading server metrics...</p>
+    </div>
+
+    <div id="errorContainer" class="error-container">
+        <div class="error-icon">⚠️</div>
+        <p id="errorMessage" class="error-message">Failed to fetch server metrics</p>
+        <button id="tryAgainButton" class="btn">Try Again</button>
+    </div>
+
+    <div id="dashboardContent">
+        <!-- System Overview -->
+        <div class="grid">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Server Time</h2>
+                    <div class="card-icon">🕒</div>
+                </div>
+                <div class="stat" id="serverTime">-</div>
+                <div class="stat-label">Current server time</div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Uptime</h2>
+                    <div class="card-icon">⏱️</div>
+                </div>
+                <div class="stat" id="serverUptime">-</div>
+                <div class="stat-label">Server running time</div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Requests</h2>
+                    <div class="card-icon">📊</div>
+                </div>
+                <div class="stat" id="requestsProcessed">-</div>
+                <div class="stat-label">Total requests processed</div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Active Processes</h2>
+                    <div class="card-icon">🖥️</div>
+                </div>
+                <div class="stat" id="activeProcesses">-</div>
+                <div class="stat-label">Running processes</div>
+            </div>
+        </div>
+
+        <!-- CPU Section -->
+        <div class="card card-row-4">
+            <div class="card-header">
+                <h2 class="card-title">CPU Utilization</h2>
+                <div class="card-icon">💻</div>
+            </div>
+
+            <div class="percent">
+                <span>Overall CPU Usage</span>
+                <span id="cpuUsagePercent" class="value-green">0%</span>
+            </div>
+            <div class="progress-container">
+                <div id="cpuUsageBar" class="progress-bar progress-green" style="width: 0%"></div>
+            </div>
+
+            <div class="inner-grid" id="cpuCoresContainer">
+                <!-- CPU cores will be added here dynamically -->
+            </div>
+
+            <h3 class="section-title">Load Average</h3>
+            <div class="inner-grid">
+                <div class="inner-card">
+                    <h4 class="inner-card-title">1 min</h4>
+                    <p id="loadAvg1Min" class="inner-card-value">-</p>
+                </div>
+                <div class="inner-card">
+                    <h4 class="inner-card-title">5 min</h4>
+                    <p id="loadAvg5Min" class="inner-card-value">-</p>
+                </div>
+                <div class="inner-card">
+                    <h4 class="inner-card-title">15 min</h4>
+                    <p id="loadAvg15Min" class="inner-card-value">-</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Memory and Disk Section -->
+        <div class="grid">
+            <!-- Memory -->
+            <div class="card card-row-2">
+                <div class="card-header">
+                    <h2 class="card-title">Memory Usage</h2>
+                    <div class="card-icon">🧠</div>
+                </div>
+
+                <div class="percent">
+                    <span>RAM</span>
+                    <span id="memoryPercent" class="value-green">0%</span>
+                </div>
+                <div class="progress-container">
+                    <div id="memoryBar" class="progress-bar progress-green" style="width: 0%"></div>
+                </div>
+
+                <div class="inner-grid">
+                    <div class="inner-card">
+                        <h4 class="inner-card-title">Total</h4>
+                        <p id="memoryTotal" class="inner-card-value">-</p>
+                    </div>
+                    <div class="inner-card">
+                        <h4 class="inner-card-title">Used</h4>
+                        <p id="memoryUsed" class="inner-card-value">-</p>
+                    </div>
+                    <div class="inner-card">
+                        <h4 class="inner-card-title">Available</h4>
+                        <p id="memoryAvailable" class="inner-card-value">-</p>
+                    </div>
+                    <div class="inner-card">
+                        <h4 class="inner-card-title">Free</h4>
+                        <p id="memoryFree" class="inner-card-value">-</p>
+                    </div>
+                </div>
+
+                <h3 class="section-title">Swap Memory</h3>
+                <div class="percent">
+                    <span>Swap</span>
+                    <span id="swapPercent" class="value-green">0%</span>
+                </div>
+                <div class="progress-container">
+                    <div id="swapBar" class="progress-bar progress-green" style="width: 0%"></div>
+                </div>
+
+                <div class="inner-grid">
+                    <div class="inner-card">
+                        <h4 class="inner-card-title">Total</h4>
+                        <p id="swapTotal" class="inner-card-value">-</p>
+                    </div>
+                    <div class="inner-card">
+                        <h4 class="inner-card-title">Used</h4>
+                        <p id="swapUsed" class="inner-card-value">-</p>
+                    </div>
+                    <div class="inner-card">
+                        <h4 class="inner-card-title">Free</h4>
+                        <p id="swapFree" class="inner-card-value">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Disk -->
+            <div class="card card-row-2">
+                <div class="card-header">
+                    <h2 class="card-title">Disk Storage</h2>
+                    <div class="card-icon">💾</div>
+                </div>
+
+                <div class="percent">
+                    <span>Disk Usage</span>
+                    <span id="diskPercent" class="value-green">0%</span>
+                </div>
+                <div class="progress-container">
+                    <div id="diskBar" class="progress-bar progress-green" style="width: 0%"></div>
+                </div>
+
+                <div class="inner-grid">
+                    <div class="inner-card">
+                        <h4 class="inner-card-title">Total</h4>
+                        <p id="diskTotal" class="inner-card-value">-</p>
+                    </div>
+                    <div class="inner-card">
+                        <h4 class="inner-card-title">Used</h4>
+                        <p id="diskUsed" class="inner-card-value">-</p>
+                    </div>
+                    <div class="inner-card">
+                        <h4 class="inner-card-title">Free</h4>
+                        <p id="diskFree" class="inner-card-value">-</p>
+                    </div>
+                </div>
+
+                <h3 class="section-title">Disk I/O</h3>
+                <div class="inner-grid">
+                    <div class="inner-card">
+                        <h4 class="inner-card-title">Read</h4>
+                        <p id="diskRead" class="inner-card-value">-</p>
+                    </div>
+                    <div class="inner-card">
+                        <h4 class="inner-card-title">Write</h4>
+                        <p id="diskWrite" class="inner-card-value">-</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Network Section -->
+        <div class="card card-row-4">
+            <div class="card-header">
+                <h2 class="card-title">Network Usage</h2>
+                <div class="card-icon">📡</div>
+            </div>
+
+            <div class="inner-grid">
+                <div class="inner-card">
+                    <h4 class="inner-card-title">Sent</h4>
+                    <p id="networkSent" class="inner-card-value">-</p>
+                </div>
+                <div class="inner-card">
+                    <h4 class="inner-card-title">Received</h4>
+                    <p id="networkReceived" class="inner-card-value">-</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JavaScript goes in a separate file to avoid syntax errors -->
+<script src="/static/metrics-dashboard.js"></script>
+</body>
+</html>
