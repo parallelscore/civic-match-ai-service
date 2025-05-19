@@ -1,9 +1,9 @@
 from fastapi import HTTPException, status
 
+from app.utils.logging_util import setup_logger
 from app.api.routes.base_router import RouterManager
 from app.schemas.voters_schema import VoterSubmissionSchema
 from app.services.matching_engine_service import matching_engine
-from app.utils.logging_util import setup_logger
 
 
 class MatchingEngineRouter:

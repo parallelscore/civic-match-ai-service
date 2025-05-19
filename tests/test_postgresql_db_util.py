@@ -1,5 +1,4 @@
-import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.utils.postgresql_db_util import DBUtil

@@ -1,14 +1,16 @@
 import time
-
 import uvicorn
+from pathlib import Path
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
+from app.core.config import settings
+from app.core.middleware import register_middlewares
+from app.api.routes.server_metrics import ServerMetrics
 from app.api.models.model_init import create_all_tables
 from app.api.routes.matching_engine import MatchingEngineRouter
 from app.api.routes.mock_candidates_response import MockCandidatesResponseRouter
-from app.api.routes.server_metrics import ServerMetrics
-from app.core.config import settings
-from app.core.middleware import register_middlewares
 
 
 def create_app() -> FastAPI:
@@ -25,6 +27,17 @@ def create_app() -> FastAPI:
 
     # Register middleware
     register_middlewares(app)
+
+    # Mount static files directory
+    static_dir = Path(__file__).parent / "static"
+    static_dir.mkdir(exist_ok=True)  # Create the directory if it doesn't exist
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    # Add dashboard route
+    @app.get("/dashboard", include_in_schema=False)
+    async def get_metrics_dashboard():
+        dashboard_path = Path(__file__).parent / "static" / "metrics-dashboard.html"
+        return FileResponse(str(dashboard_path))
 
     server_metrics_router = ServerMetrics(app).router
 

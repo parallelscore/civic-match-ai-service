@@ -1,7 +1,5 @@
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
-import aiohttp
-from aiohttp import ClientResponseError
 
 from app.services.candidate_service import CandidateService
 from app.schemas.candidate_schema import CandidateResponseSchema
