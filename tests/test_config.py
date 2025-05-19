@@ -1,5 +1,6 @@
 import os
 import pytest
+
 from app.core.config import get_settings, BaseConfig, DevConfig, DemoConfig, ProdConfig
 
 
