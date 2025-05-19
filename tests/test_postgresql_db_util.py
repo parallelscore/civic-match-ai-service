@@ -1,5 +1,4 @@
-import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.utils.postgresql_db_util import DBUtil
@@ -134,3 +133,4 @@ class TestDBUtil:
         # Verify the result and logging
         assert result is None
         mock_logger.error.assert_called_once_with("Error occurred while getting session: %s", "Test error")
+        
