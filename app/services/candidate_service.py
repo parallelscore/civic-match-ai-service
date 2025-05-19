@@ -1,10 +1,9 @@
+import aiohttp
 from typing import List
 
-import aiohttp
-
 from app.core.config import settings
-from app.schemas.candidate_schema import CandidateResponseSchema, CandidateResponseItemSchema
 from app.utils.logging_util import setup_logger
+from app.schemas.candidate_schema import CandidateResponseSchema, CandidateResponseItemSchema
 
 
 class CandidateService:
