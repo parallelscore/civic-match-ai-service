@@ -133,4 +133,3 @@ class TestDBUtil:
         # Verify the result and logging
         assert result is None
         mock_logger.error.assert_called_once_with("Error occurred while getting session: %s", "Test error")
-        
