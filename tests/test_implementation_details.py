@@ -1,5 +1,3 @@
-import pytest
-from unittest.mock import patch, MagicMock
 import inspect
 
 from app.services.matching_engine_service import MatchingEngine
@@ -101,3 +99,4 @@ class TestImplementationDetails:
 
         similarity_partial, explanation_partial = engine._calculate_similarity(voter_ranking, candidate_ranking_partial, "ranking")
         print(f"Partial: {similarity_partial}, {explanation_partial}")
+        
