@@ -99,4 +99,3 @@ class TestImplementationDetails:
 
         similarity_partial, explanation_partial = engine._calculate_similarity(voter_ranking, candidate_ranking_partial, "ranking")
         print(f"Partial: {similarity_partial}, {explanation_partial}")
-        
