@@ -164,7 +164,6 @@ class MatchingEngine:
         Args:
             common_questions: Set of common questions between voter and candidate
             voter_responses: Dictionary mapping question text to voter response
-            candidate_responses: Dictionary mapping question text to candidate response
 
         Returns:
             Dictionary mapping categories to lists of questions
@@ -187,7 +186,8 @@ class MatchingEngine:
 
         return categories
 
-    def _determine_category_from_keywords(self, question):
+    @staticmethod
+    def _determine_category_from_keywords(question):
         """
         Determine category based on keywords in the question text.
         This is a fallback for when no category is provided.
@@ -220,7 +220,8 @@ class MatchingEngine:
         # Default category if no keywords match
         return "Other Issues"
 
-    def _get_alignment_level(self, score):
+    @staticmethod
+    def _get_alignment_level(score):
         """Convert a numeric score to an alignment level string."""
         if score >= 0.8:
             return "Strongly Aligned"
@@ -229,7 +230,8 @@ class MatchingEngine:
         else:
             return "Weakly Aligned"
 
-    def _format_position(self, answer):
+    @staticmethod
+    def _format_position(answer):
         """Format an answer into a readable position statement."""
         if isinstance(answer, bool):
             return "Yes" if answer else "No"
@@ -242,7 +244,8 @@ class MatchingEngine:
                 return text[:97] + "..."
             return text
 
-    def _determine_response_type(self, answer: Any) -> str:
+    @staticmethod
+    def _determine_response_type(answer: Any) -> str:
         """Determine the response type based on the answer."""
         if isinstance(answer, bool):
             return 'binary'
@@ -253,7 +256,8 @@ class MatchingEngine:
         else:
             return 'text'
 
-    def _calculate_similarity(self, voter_answer: Any, candidate_answer: Any, response_type: str) -> Tuple[float, str]:
+    @staticmethod
+    def _calculate_similarity(voter_answer: Any, candidate_answer: Any, response_type: str) -> Tuple[float, str]:
         """
         Calculate similarity between voter and candidate answers.
 
@@ -263,7 +267,8 @@ class MatchingEngine:
         if response_type == 'binary':
             # Direct binary comparison
             similarity = 1.0 if voter_answer == candidate_answer else 0.0
-            explanation = "Exact match" if similarity == 1.0 else "Different responses"
+            explanation = "Exact match" if math.isclose(similarity, 1.0, rel_tol=1e-09, abs_tol=1e-09) else \
+                "Different responses"
 
         elif response_type == 'multiple-choice':
             # Calculate Jaccard similarity for multiple choice
@@ -278,7 +283,7 @@ class MatchingEngine:
                 union = len(voter_set.union(candidate_set))
                 similarity = intersection / union if union > 0 else 0.0
 
-                if similarity == 1.0:
+                if math.isclose(similarity, 1.0, rel_tol=1e-09, abs_tol=1e-09):
                     explanation = "Exact match on all selections"
                 elif similarity > 0:
                     explanation = f"Partial match: {intersection} common selections out of {union} total"
@@ -299,7 +304,7 @@ class MatchingEngine:
             common_items = set(voter_top).intersection(set(candidate_top))
             similarity = len(common_items) / max(len(voter_top), len(candidate_top))
 
-            if similarity == 1.0 and voter_top == candidate_top:
+            if math.isclose(similarity, 1.0, rel_tol=1e-09, abs_tol=1e-09) and voter_top == candidate_top:
                 explanation = "Exact match on priorities"
             elif similarity > 0:
                 explanation = f"Partial match: {len(common_items)} common priorities"
