@@ -25,15 +25,14 @@ class MatchingEngineRouter:
     async def submit_voter_responses(self, submission: VoterSubmissionSchema):
         """
         Submit voter responses and calculate matches.
-
-        Args:
-            submission: The voter's submission containing responses to questions
-
-        Returns:
-            Match results for all candidates
         """
         try:
-            self.logger.info(f"Received match request for voter {submission.election_id}")
+            self.logger.info(f"Received match request for voter {submission.citizen_id}")
+
+            # Log if priorities were specified
+            if submission.issue_priorities:
+                self.logger.info(f"Voter {submission.citizen_id} specified {len(submission.issue_priorities)} issue priorities")
+
             results = await matching_engine.process_voter_submission(submission)
             return results
 
