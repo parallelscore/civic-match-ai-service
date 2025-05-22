@@ -2,8 +2,10 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import List, Union, Dict, Any, Optional
 
+from app.schemas.to_camel_schema import CamelModel
 
-class VoterResponseItemSchema(BaseModel):
+
+class VoterResponseItemSchema(CamelModel):
     """Schema for a voter's response to a question."""
     question_id: str
     question: str
@@ -11,7 +13,7 @@ class VoterResponseItemSchema(BaseModel):
     category: Optional[str] = None
 
 
-class VoterSubmissionSchema(BaseModel):
+class VoterSubmissionSchema(CamelModel):
     """Schema for a voter's submission of responses."""
     election_id: str
     citizen_id: str
@@ -39,7 +41,7 @@ class CandidateMatchSchema(BaseModel):
 
 class MatchResultsResponseSchema(BaseModel):
     """Schema for the response containing all match results."""
-    voter_id: str
+    citizen_id: str
     election_id: str
     matches: List[CandidateMatchSchema]
     generated_at: datetime = Field(default_factory=datetime.now)
