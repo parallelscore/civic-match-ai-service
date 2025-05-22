@@ -1,13 +1,12 @@
 import math
 from datetime import datetime
-from typing import Any, Tuple, Dict, List
+from typing import Any, Tuple
 
 from app.utils.logging_util import setup_logger
 from app.schemas.voters_schema import VoterSubmissionSchema
 from app.services.candidate_service import candidate_service
 from app.schemas.candidate_schema import CandidateResponseSchema
-from app.schemas.voters_schema import (CandidateMatchSchema, MatchResultsResponseSchema, IssueMatchDetailSchema,
-                                       IssuePrioritySchema, WeightedIssueSchema)
+from app.schemas.voters_schema import CandidateMatchSchema, MatchResultsResponseSchema, IssueMatchDetailSchema
 
 
 class MatchingEngine:
@@ -45,7 +44,7 @@ class MatchingEngine:
         if not candidates:
             self.logger.warning(f"No candidates found for election {submission.election_id}")
             return MatchResultsResponseSchema(
-                voter_id=submission.citizen_id,
+                citizen_id=submission.citizen_id,
                 election_id=submission.election_id,
                 matches=[],
                 generated_at=datetime.now()
@@ -61,7 +60,7 @@ class MatchingEngine:
         match_results.sort(key=lambda x: x.match_percentage, reverse=True)
 
         return MatchResultsResponseSchema(
-            voter_id=submission.citizen_id,
+            citizen_id=submission.citizen_id,
             election_id=submission.election_id,
             matches=match_results,
             generated_at=datetime.now()
@@ -71,10 +70,9 @@ class MatchingEngine:
                          candidate: CandidateResponseSchema) -> CandidateMatchSchema:
         """
         Calculate a match between a voter and a candidate.
-        Works with or without explicit priorities.
 
         Args:
-            voter_submission: The voter's submission with responses and optional priorities
+            voter_submission: The voter's submission
             candidate: The candidate's information and responses
 
         Returns:
@@ -97,37 +95,17 @@ class MatchingEngine:
                 candidate_title="Candidate",
                 match_percentage=0,
                 top_aligned_issues=[],
-                issue_matches=[],
-                weighted_issues=[],
-                strongest_match_factors=[]
+                issue_matches=[]
             )
 
         # Categorize questions by issue/topic
         issue_categories = self._categorize_questions(common_questions, voter_responses, candidate_responses)
 
-        # Extract or infer priorities
-        category_weights = self._extract_category_weights(voter_submission)
-
-        # Track if we're using explicit priorities or inferred ones
-        using_explicit_priorities = (
-                hasattr(voter_submission, 'issue_priorities') and
-                voter_submission.issue_priorities is not None and
-                len(voter_submission.issue_priorities) > 0
-        )
-
         # Calculate issue match details and scores
         issue_matches = []
         issue_scores = {}
-        weighted_scores = []
-        total_weight = 0
-        weighted_issues = []
-        score_contributions = {}
 
         for issue, questions in issue_categories.items():
-            # Get the weight for this category (default to 1.0 if not specified)
-            weight = category_weights.get(issue, 1.0)
-            total_weight += weight
-
             # Calculate the average score for this issue
             scores = []
             for question in questions:
@@ -144,21 +122,6 @@ class MatchingEngine:
             # Calculate issue score
             avg_score = sum(scores) / len(scores) if scores else 0
             issue_scores[issue] = avg_score
-
-            # Add weighted score contribution
-            weighted_contribution = avg_score * weight
-            weighted_scores.append(weighted_contribution)
-
-            # Track weighted scores for explanation
-            impact_score = weighted_contribution / total_weight if total_weight > 0 else 0
-            score_contributions[issue] = impact_score
-
-            # Record weighted issue data
-            weighted_issues.append({
-                "category": issue,
-                "weight": weight,
-                "impact_score": impact_score
-            })
 
             # Get an alignment level
             alignment = self._get_alignment_level(avg_score)
@@ -177,137 +140,22 @@ class MatchingEngine:
             )
             issue_matches.append(issue_match)
 
-        # Calculate overall match percentage (0-100) with weights
-        overall_score = sum(weighted_scores) / total_weight if total_weight > 0 else 0
+        # Calculate overall match percentage (0-100)
+        overall_score = sum(issue_scores.values()) / len(issue_scores) if issue_scores else 0
         match_percentage = math.floor(overall_score * 100)
 
-        # Calculate a confidence score (0.0-1.0) based on coverage
-        # More questions = higher confidence
-        total_questions = len(voter_submission.responses)
-        questions_answered_ratio = len(common_questions) / total_questions if total_questions > 0 else 0
-        confidence_score = min(1.0, 0.5 + (questions_answered_ratio * 0.5))  # Range from 0.5 to 1.0
-
         # Get top-aligned issues (up to 3)
-        if using_explicit_priorities:
-            # If using priorities, sort based on both alignment score and weight
-            sorted_issues = sorted(
-                [(issue, score, category_weights.get(issue, 1.0)) for issue, score in issue_scores.items()],
-                key=lambda x: (x[1] * x[2], x[1]),  # Sort by weighted score, then raw score
-                reverse=True
-            )
-            top_aligned_issues = [issue for issue, score, _ in sorted_issues[:3] if score >= 0.6]
-        else:
-            # Original sorting by just the score
-            sorted_issues = sorted(issue_scores.items(), key=lambda x: x[1], reverse=True)
-            top_aligned_issues = [issue for issue, score in sorted_issues[:3] if score >= 0.6]
+        sorted_issues = sorted(issue_scores.items(), key=lambda x: x[1], reverse=True)
+        top_aligned_issues = [issue for issue, score in sorted_issues[:3] if score >= 0.6]
 
-        # Create list of strongest match factors for explanation
-        strongest_match_factors = []
-        if using_explicit_priorities:
-            for issue, impact in sorted(score_contributions.items(), key=lambda x: x[1], reverse=True)[:3]:
-                if impact > 0.1:  # Only include significant factors
-                    priority_level = "High priority" if category_weights.get(issue, 1.0) > 0.8 else \
-                        "Medium priority" if category_weights.get(issue, 1.0) > 0.4 else \
-                            "Low priority"
-                    alignment = self._get_alignment_level(issue_scores[issue])
-                    strongest_match_factors.append(f"{priority_level} {issue} ({alignment.lower()})")
-
-        # Convert weighted issues dictionary to schema objects
-        weighted_issues_schema = [
-            WeightedIssueSchema(
-                category=issue["category"],
-                weight=issue["weight"],
-                impact_score=issue["impact_score"]
-            ) for issue in weighted_issues
-        ]
-
-        # Always return the full schema, even when not using explicit priorities
         return CandidateMatchSchema(
             candidate_id=candidate.candidate_id,
             candidate_name=getattr(candidate, "name", candidate.candidate_id),
             candidate_title="Senate Candidate",  # Default title can be customized
             match_percentage=match_percentage,
-            confidence_score=confidence_score,
             top_aligned_issues=top_aligned_issues,
-            issue_matches=issue_matches,
-            weighted_issues=weighted_issues_schema,
-            strongest_match_factors=strongest_match_factors
+            issue_matches=issue_matches
         )
-
-    def _extract_category_weights(self, voter_submission: VoterSubmissionSchema) -> Dict[str, float]:
-        """
-        Extract category weights from voter priorities or infer them if not provided.
-
-        Returns a dictionary mapping category names to weights (0.0-1.0).
-        """
-        # Check if explicit priorities are provided
-        if hasattr(voter_submission, 'issue_priorities') and voter_submission.issue_priorities:
-            # Use explicitly provided priorities
-            return self._normalize_priority_weights(voter_submission.issue_priorities)
-
-        # No explicit priorities - use inference methods
-        return self._infer_priorities(voter_submission)
-
-    def _infer_priorities(self, voter_submission: VoterSubmissionSchema) -> Dict[str, float]:
-        """
-        Infer priorities when none are explicitly provided.
-
-        Strategy options:
-        1. Equal weighting (default fallback)
-        2. Infer from response patterns
-        3. Use population-level defaults
-        """
-        # Get all categories from the voter's responses
-        categories = set()
-        for response in voter_submission.responses:
-            category = getattr(response, 'category', None)
-            if category:
-                categories.add(category)
-            else:
-                # For questions without a category, infer it
-                inferred_category = self._determine_category_from_keywords(response.question)
-                categories.add(inferred_category)
-
-        # Strategy 1: Equal weights (simplest approach)
-        weights = {}
-        weight_value = 1.0 / len(categories) if categories else 1.0
-        for category in categories:
-            weights[category] = weight_value
-
-        return weights
-
-    @staticmethod
-    def _normalize_priority_weights(priorities: List[IssuePrioritySchema]) -> Dict[str, float]:
-        """
-        Normalize priority weights to ensure they sum to a meaningful value.
-
-        This handles both explicit weights and rankings.
-        """
-        weights = {}
-        total_explicit_weight = 0
-
-        # Check if weights are already provided
-        for priority in priorities:
-            weights[priority.category] = priority.weight
-            total_explicit_weight += priority.weight
-
-        # If weights seem to be rankings (e.g., 1, 2, 3) rather than weights (0.1-1.0),
-        # convert them to weights inversely proportional to rank
-        if any(w > 1.0 for w in weights.values()):
-            # Assume these are rankings, lower is more important
-            max_rank = max(weights.values())
-            normalized_weights = {}
-            for category, rank in weights.items():
-                # Convert ranks to weights (inverse to make lower ranks higher weight)
-                normalized_weights[category] = (max_rank - rank + 1) / max_rank
-            return normalized_weights
-
-        # If weights don't sum to 1.0, normalize them
-        if total_explicit_weight > 0 and abs(total_explicit_weight - 1.0) > 0.01:
-            for category in weights:
-                weights[category] = weights[category] / total_explicit_weight
-
-        return weights
 
     def _categorize_questions(self, common_questions, voter_responses, candidate_responses):
         """
