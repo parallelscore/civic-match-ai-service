@@ -35,12 +35,9 @@ class CandidateMatchSchema(BaseModel):
     candidate_name: str
     candidate_title: str
     match_percentage: int  # 0-100
-    confidence_score: float = 1.0
     top_aligned_issues: List[str]
     issue_matches: List[IssueMatchDetailSchema]
-    weighted_issues: Optional[List[WeightedIssueSchema]]  # New field showing priority impact
-    strongest_match_factors: Optional[List[str]]
-
+    
 
 class MatchResultsResponseSchema(BaseModel):
     """Schema for the response containing all match results."""
