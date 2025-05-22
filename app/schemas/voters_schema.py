@@ -19,7 +19,7 @@ class VoterSubmissionSchema(CamelModel):
     citizen_id: str
     responses: List[VoterResponseItemSchema]
     completed_at: datetime = Field(default_factory=datetime.now)
-
+      
 
 class IssueMatchDetailSchema(BaseModel):
     """Schema for detailed position comparison on a single issue."""
@@ -27,7 +27,7 @@ class IssueMatchDetailSchema(BaseModel):
     alignment: str  # "Strongly Aligned", "Moderately Aligned", "Weakly Aligned"
     voter_position: str
     candidate_position: str
-
+      
 
 class CandidateMatchSchema(BaseModel):
     """Schema for a match result between a voter and a candidate."""
@@ -35,8 +35,11 @@ class CandidateMatchSchema(BaseModel):
     candidate_name: str
     candidate_title: str
     match_percentage: int  # 0-100
+    confidence_score: float = 1.0
     top_aligned_issues: List[str]
     issue_matches: List[IssueMatchDetailSchema]
+    weighted_issues: Optional[List[WeightedIssueSchema]]  # New field showing priority impact
+    strongest_match_factors: Optional[List[str]]
 
 
 class MatchResultsResponseSchema(BaseModel):
