@@ -13,7 +13,7 @@ class MockCandidatesResponseRouter:
 
         # Register the mock API endpoint
         self.router_manager.add_route(
-            path="/recommendations/elections/{election_id}/candidates",
+            path="/candidates/recommendation/{election_id}",
             handler_method=self.get_mock_candidates_response,
             methods=["GET"],
             tags=["Mock API"],
