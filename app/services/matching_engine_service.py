@@ -44,7 +44,7 @@ class MatchingEngine:
         if not candidates:
             self.logger.warning(f"No candidates found for election {submission.election_id}")
             return MatchResultsResponseSchema(
-                voter_id=submission.citizen_id,
+                citizen_id=submission.citizen_id,
                 election_id=submission.election_id,
                 matches=[],
                 generated_at=datetime.now()
@@ -60,7 +60,7 @@ class MatchingEngine:
         match_results.sort(key=lambda x: x.match_percentage, reverse=True)
 
         return MatchResultsResponseSchema(
-            voter_id=submission.citizen_id,
+            citizen_id=submission.citizen_id,
             election_id=submission.election_id,
             matches=match_results,
             generated_at=datetime.now()
