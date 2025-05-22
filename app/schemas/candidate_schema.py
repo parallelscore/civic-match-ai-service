@@ -1,8 +1,8 @@
-from pydantic import BaseModel
 from typing import List, Union, Dict, Any
+from app.schemas.to_camel_schema import CamelModel
 
 
-class CandidateResponseItemSchema(BaseModel):
+class CandidateResponseItemSchema(CamelModel):
     """Schema for a single candidate's response to a question."""
     id: str
     question: str
@@ -11,7 +11,7 @@ class CandidateResponseItemSchema(BaseModel):
     election_id: str
 
 
-class CandidateResponseSchema(BaseModel):
+class CandidateResponseSchema(CamelModel):
     """Schema for a candidate's responses."""
     candidate_id: str
     election_id: str
