@@ -3,7 +3,7 @@ from typing import List
 
 from app.core.config import settings
 from app.utils.logging_util import setup_logger
-from app.schemas.candidate_schema import CandidateResponseSchema, CandidateResponseItemSchema
+from app.schemas.candidate_schema import CandidateResponseSchema
 
 
 class CandidateService:
@@ -19,7 +19,7 @@ class CandidateService:
             self.logger.info(f"Using mock API at: {self.base_url}")
         else:
             self.base_url = settings.BACKEND_API_URL
-            self.logger.info(f"Using real API at: {self.base_url}")  # Configure this in settings
+            self.logger.info(f"Using real API at: {self.base_url}")
 
     async def get_candidates_for_election(self, election_id: str) -> List[CandidateResponseSchema]:
         """
@@ -33,7 +33,7 @@ class CandidateService:
         """
         try:
             async with aiohttp.ClientSession() as session:
-                url = f"{self.base_url}/recommendations/elections/{election_id}/candidates"
+                url = f"{self.base_url}/candidates/recommendation/{election_id}"
                 self.logger.info(f"Fetching candidates from: {url}")
 
                 async with session.get(url) as response:
@@ -42,25 +42,12 @@ class CandidateService:
                         return []
 
                     data = await response.json()
-                    self.logger.info(f"Received {len(data)} candidates")
+                    candidates_data = data.get("data", [])
+                    self.logger.info(f"Processing {len(candidates_data)} candidates")
 
-                    # Convert to our schema
                     candidates = []
-                    for candidate_data in data:
-                        candidate = CandidateResponseSchema(
-                            candidate_id=candidate_data.get("candidate_id"),
-                            election_id=candidate_data.get("election_id"),
-                            responses=[
-                                CandidateResponseItemSchema(
-                                    id=response.get("id"),
-                                    question=response.get("question"),
-                                    answer=response.get("answer"),
-                                    comment=response.get("comment"),
-                                    election_id=response.get("election_id")
-                                )
-                                for response in candidate_data.get("responses", [])
-                            ]
-                        )
+                    for candidate_data in candidates_data:
+                        candidate = CandidateResponseSchema.model_validate(candidate_data)
                         candidates.append(candidate)
 
                     return candidates

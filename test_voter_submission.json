@@ -1,15 +1,15 @@
 {
-  "election_id": "e001",
-  "citizen_id": "v001",
+  "electionId": "29ae2266-0c83-4707-85b8-5f278335e76b",
+  "citizenId": "v001",
   "responses": [
     {
-      "question_id": "q001",
+      "questionId": "q001",
       "question": "Should your neighborhood students have access to a language immersion middle school within a 30-minute commute?",
       "answer": "Strongly Agree",
       "category": "Education Access"
     },
     {
-      "question_id": "q002",
+      "questionId": "q002",
       "question": "Which educational programs should receive increased funding? (Select all that apply)",
       "answer": [
         "STEM initiatives",
@@ -19,37 +19,37 @@
       "category": "School Funding"
     },
     {
-      "question_id": "q003",
+      "questionId": "q003",
       "question": "Do you think it's essential for the your neighborhood council member to prioritize mental health resources for students?",
       "answer": "Strongly Agree",
       "category": "Student Support"
     },
     {
-      "question_id": "q004",
+      "questionId": "q004",
       "question": "Do you believe School Resource Officers (SROs) effectively keep your neighborhood schools safe?",
       "answer": "Strongly Disagree",
       "category": "School Safety"
     },
     {
-      "question_id": "q005",
+      "questionId": "q005",
       "question": "Should your your neighborhood council member actively pass legislation benefiting your neighborhood students and families?",
       "answer": "Agree",
       "category": "Community Engagement"
     },
     {
-      "question_id": "q006",
+      "questionId": "q006",
       "question": "Has education in your neighborhood improved over the last 20 years?",
       "answer": "Disagree",
       "category": "Educational Progress"
     },
     {
-      "question_id": "q007",
+      "questionId": "q007",
       "question": "What is your top priority for public schools?",
       "answer": "Increase funding for public schools",
       "category": "School Funding"
     },
     {
-      "question_id": "q008",
+      "questionId": "q008",
       "question": "Do you support vocational training in schools?",
       "answer": "Strongly Agree",
       "category": "Vocational Training"
