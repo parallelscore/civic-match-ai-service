@@ -38,21 +38,12 @@ class IssueMatchDetailSchema(BaseModel):
     explanation: Optional[str] = None  # LLM-generated explanation of why they align/don't align
 
 
-class TopAlignedIssueSchema(BaseModel):
-    """Schema for top aligned issues tags."""
-    issue: str
-    color: str  # For UI styling - e.g., "orange", "blue", "green"
-
-
 class CandidateMatchSchema(BaseModel):
     """Schema for a match result between a voter and a candidate."""
     candidate_id: str
-    candidate_name: str
-    candidate_title: str
-    candidate_image_url: Optional[str] = None
     match_percentage: int  # 0-100
-    match_strength_visual: float  # 0.0 to 1.0 for progress bar
-    top_aligned_issues: List[TopAlignedIssueSchema]
+    match_strength_visual: float  # 0.0 to 1.0 for the progress bar
+    top_aligned_issues: List[str]  # Simple list of issue names
     issue_matches: List[IssueMatchDetailSchema]
     overall_explanation: Optional[str] = None  # LLM-generated summary of the match
 
