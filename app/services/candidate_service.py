@@ -42,14 +42,40 @@ class CandidateService:
                         return []
 
                     data = await response.json()
-                    candidates_data = data.get("data", [])
+
+                    # Handle both direct array and nested data structure
+                    if isinstance(data, list):
+                        candidates_data = data
+                    else:
+                        candidates_data = data.get("data", [])
+
                     self.logger.info(f"Processing {len(candidates_data)} candidates")
 
                     candidates = []
                     for candidate_data in candidates_data:
-                        candidate = CandidateResponseSchema.model_validate(candidate_data)
-                        candidates.append(candidate)
+                        # Handle the candidate data structure from your ward8_election_data.json
+                        # The data uses 'candidateId' instead of 'candidate_id'
+                        if 'candidateId' in candidate_data:
+                            candidate_data['candidate_id'] = candidate_data.pop('candidateId')
 
+                        if 'electionId' in candidate_data:
+                            candidate_data['election_id'] = candidate_data.pop('electionId')
+
+                        # Handle responses that might use 'electionId' instead of 'election_id'
+                        if 'responses' in candidate_data:
+                            for response in candidate_data['responses']:
+                                if 'electionId' in response:
+                                    response['election_id'] = response.pop('electionId')
+
+                        try:
+                            candidate = CandidateResponseSchema.model_validate(candidate_data)
+                            candidates.append(candidate)
+                        except Exception as validation_error:
+                            self.logger.error(f"Failed to validate candidate data: {validation_error}")
+                            self.logger.debug(f"Problematic candidate data: {candidate_data}")
+                            continue
+
+                    self.logger.info(f"Successfully processed {len(candidates)} candidates")
                     return candidates
 
         except Exception as e:
