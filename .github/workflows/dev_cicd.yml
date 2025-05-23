@@ -44,9 +44,21 @@ jobs:
           load: true
           build-args: |
             POSTGRESQL_DATABASE_URL=${{ secrets.DEV_POSTGRESQL_DATABASE_URL }}
+            REDIS_DATABASE_URL=${{ secrets.DEV_REDIS_DATABASE_URL }}
             BACKEND_API_URL=${{ secrets.DEV_BACKEND_API_URL }}
             USE_MOCK_BACKEND_API_URL=${{ secrets.USE_MOCK_BACKEND_API_URL }}
             MOCK_BACKEND_API_URL=${{ secrets.MOCK_BACKEND_API_URL }}
+            OPENAI_API_KEY=${{ secrets.DEV_OPENAI_API_KEY }}
+            LLM_PROVIDER=${{ secrets.DEV_LLM_PROVIDER }}
+            LLM_MODEL=${{ secrets.DEV_LLM_MODEL }}
+            LLM_MAX_TOKENS=${{ secrets.DEV_LLM_MAX_TOKENS }}
+            LLM_TEMPERATURE=${{ secrets.DEV_LLM_TEMPERATURE }}
+            LLM_TIMEOUT_SECONDS=${{ secrets.DEV_LLM_TIMEOUT_SECONDS }}
+            LLM_RETRY_ATTEMPTS=${{ secrets.DEV_LLM_RETRY_ATTEMPTS }}
+            EMBEDDING_MODEL=${{ secrets.DEV_EMBEDDING_MODEL }}
+            EMBEDDING_SIMILARITY_THRESHOLD=${{ secrets.DEV_EMBEDDING_SIMILARITY_THRESHOLD }}
+            ENABLE_LLM_MATCHING=${{ secrets.DEV_ENABLE_LLM_MATCHING }}
+            ENABLE_SEMANTIC_MATCHING=${{ secrets.DEV_ENABLE_SEMANTIC_MATCHING }}
 
       - name: Save image tag
         run: echo "::set-output name=image-tag::${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}:dev"
@@ -109,9 +121,21 @@ jobs:
             ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}:dev
           build-args: |
             POSTGRESQL_DATABASE_URL=${{ secrets.DEV_POSTGRESQL_DATABASE_URL }}
+            REDIS_DATABASE_URL=${{ secrets.DEV_REDIS_DATABASE_URL }}
             BACKEND_API_URL=${{ secrets.DEV_BACKEND_API_URL }}
             USE_MOCK_BACKEND_API_URL=${{ secrets.USE_MOCK_BACKEND_API_URL }}
             MOCK_BACKEND_API_URL=${{ secrets.MOCK_BACKEND_API_URL }}
+            OPENAI_API_KEY=${{ secrets.DEV_OPENAI_API_KEY }}
+            LLM_PROVIDER=${{ secrets.DEV_LLM_PROVIDER }}
+            LLM_MODEL=${{ secrets.DEV_LLM_MODEL }}
+            LLM_MAX_TOKENS=${{ secrets.DEV_LLM_MAX_TOKENS }}
+            LLM_TEMPERATURE=${{ secrets.DEV_LLM_TEMPERATURE }}
+            LLM_TIMEOUT_SECONDS=${{ secrets.DEV_LLM_TIMEOUT_SECONDS }}
+            LLM_RETRY_ATTEMPTS=${{ secrets.DEV_LLM_RETRY_ATTEMPTS }}
+            EMBEDDING_MODEL=${{ secrets.DEV_EMBEDDING_MODEL }}
+            EMBEDDING_SIMILARITY_THRESHOLD=${{ secrets.DEV_EMBEDDING_SIMILARITY_THRESHOLD }}
+            ENABLE_LLM_MATCHING=${{ secrets.DEV_ENABLE_LLM_MATCHING }}
+            ENABLE_SEMANTIC_MATCHING=${{ secrets.DEV_ENABLE_SEMANTIC_MATCHING }}
 
   deploy-to-kubernetes:
     needs: push-docker-image
