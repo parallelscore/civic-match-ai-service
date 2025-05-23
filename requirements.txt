@@ -12,6 +12,7 @@ pydantic==2.11.3
 aiohttp==3.11.18
 requests==2.32.3
 fastapi==0.115.12
+anthropic==0.52.0
 sqlalchemy==2.0.40
 pytest-mock==3.14.0
 scikit-learn==1.6.1
