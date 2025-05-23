@@ -1,5 +1,5 @@
 import os
-from typing import List, ClassVar
+from typing import List, ClassVar, Optional
 
 from dotenv import load_dotenv
 from pydantic import Field, ConfigDict
@@ -19,6 +19,28 @@ class BaseConfig(BaseSettings):
     BACKEND_API_URL: str = Field(..., json_schema_extra={'env': 'BACKEND_API_URL'})
     USE_MOCK_BACKEND_API_URL: bool = Field(False, json_schema_extra={'env': 'USE_MOCK_BACKEND_API'})
     MOCK_BACKEND_API_URL: str = Field(..., json_schema_extra={'env': 'MOCK_BACKEND_API'})
+
+    # LLM Configuration
+    OPENAI_API_KEY: Optional[str] = Field(None, json_schema_extra={'env': 'OPENAI_API_KEY'})
+    ANTHROPIC_API_KEY: Optional[str] = Field(None, json_schema_extra={'env': 'ANTHROPIC_API_KEY'})
+    LLM_PROVIDER: str = Field('openai', json_schema_extra={'env': 'LLM_PROVIDER'})  # 'openai' or 'anthropic'
+    LLM_MODEL: str = Field('gpt-3.5-turbo', json_schema_extra={'env': 'LLM_MODEL'})
+    LLM_MAX_TOKENS: int = Field(2000, json_schema_extra={'env': 'LLM_MAX_TOKENS'})
+    LLM_TEMPERATURE: float = Field(0.1, json_schema_extra={'env': 'LLM_TEMPERATURE'})
+
+    # Embedding Configuration
+    EMBEDDING_MODEL: str = Field('all-MiniLM-L6-v2', json_schema_extra={'env': 'EMBEDDING_MODEL'})
+    EMBEDDING_SIMILARITY_THRESHOLD: float = Field(0.65, json_schema_extra={'env': 'EMBEDDING_SIMILARITY_THRESHOLD'})
+
+    # Caching Configuration
+    REDIS_DATABASE_URL: Optional[str] = Field(None, json_schema_extra={'env': 'REDIS_DATABASE_URL'})
+    CACHE_TTL_SECONDS: int = Field(3600, json_schema_extra={'env': 'CACHE_TTL_SECONDS'})  # 1 hour
+
+    # Matching Configuration
+    ENABLE_LLM_MATCHING: bool = Field(True, json_schema_extra={'env': 'ENABLE_LLM_MATCHING'})
+    ENABLE_SEMANTIC_MATCHING: bool = Field(True, json_schema_extra={'env': 'ENABLE_SEMANTIC_MATCHING'})
+    LLM_RETRY_ATTEMPTS: int = Field(3, json_schema_extra={'env': 'LLM_RETRY_ATTEMPTS'})
+    LLM_TIMEOUT_SECONDS: int = Field(30, json_schema_extra={'env': 'LLM_TIMEOUT_SECONDS'})
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
         arbitrary_types_allowed=True,
