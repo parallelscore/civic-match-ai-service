@@ -6,7 +6,7 @@ from typing import Any, Tuple, List, Dict, Optional
 from app.utils.logging_util import setup_logger
 from app.schemas.voters_schema import (
     VoterSubmissionSchema, CandidateMatchSchema, MatchResultsResponseSchema,
-    IssueMatchDetailSchema, VoterValueProfileSchema, TopAlignedIssueSchema,
+    IssueMatchDetailSchema, VoterValueProfileSchema,
     QuestionTopicSchema
 )
 from app.services.candidate_service import candidate_service
@@ -112,7 +112,7 @@ class EnhancedMatchingEngine:
             citizen_id=submission.citizen_id,
             election_id=submission.election_id,
             voter_values_profile=voter_profile,
-            matches=non_zero_matches,  # Use non_zero_matches instead of valid_matches
+            matches=non_zero_matches,
             generated_at=datetime.now(),
             processing_method=processing_method,
             confidence_score=confidence
@@ -335,9 +335,6 @@ class EnhancedMatchingEngine:
         self.logger.warning(f"NO MATCHES: No matches found for candidate {candidate.candidate_id}")
         return CandidateMatchSchema(
             candidate_id=candidate.candidate_id,
-            candidate_name=getattr(candidate, "name", candidate.candidate_id),
-            candidate_title="Candidate",
-            candidate_image_url=getattr(candidate, "image_url", None),
             match_percentage=0,
             match_strength_visual=0.0,
             top_aligned_issues=[],
@@ -568,24 +565,17 @@ class EnhancedMatchingEngine:
 
             self.logger.info(f"Candidate {candidate.candidate_id}: overall_score={overall_score:.3f}, match_percentage={match_percentage}")
 
-            # Create top aligned issues
-            colors = ["#FF6B35", "#F7931E", "#FFD23F", "#06FFA5", "#118AB2"]
+            # Create top aligned issues - simplified to just issue names
             top_aligned_issues = []
 
             # Sort issues by score and take top 5
             sorted_issues = sorted(issue_scores.items(), key=lambda x: x[1], reverse=True)
-            for i, (issue, score) in enumerate(sorted_issues[:5]):
+            for issue, score in sorted_issues[:5]:
                 if score >= 0.3:  # Lower threshold to ensure we get some results
-                    top_aligned_issues.append(TopAlignedIssueSchema(
-                        issue=issue,
-                        color=colors[i % len(colors)]
-                    ))
+                    top_aligned_issues.append(issue)
 
             result = CandidateMatchSchema(
                 candidate_id=candidate.candidate_id,
-                candidate_name=getattr(candidate, "name", None) or candidate.candidate_id,
-                candidate_title=getattr(candidate, "title", None) or "Candidate",
-                candidate_image_url=getattr(candidate, "image_url", None),
                 match_percentage=match_percentage,
                 match_strength_visual=overall_score,
                 top_aligned_issues=top_aligned_issues,
@@ -753,9 +743,6 @@ class EnhancedMatchingEngine:
         """Create a result for candidates with no matches."""
         return CandidateMatchSchema(
             candidate_id=candidate.candidate_id,
-            candidate_name=getattr(candidate, "name", candidate.candidate_id),
-            candidate_title=getattr(candidate, "title", "Candidate"),
-            candidate_image_url=getattr(candidate, "image_url", None),
             match_percentage=0,
             match_strength_visual=0.0,
             top_aligned_issues=[],
@@ -962,20 +949,13 @@ class EnhancedMatchingEngine:
         overall_score = sum(issue_scores.values()) / len(issue_scores) if issue_scores else 0
         match_percentage = math.floor(overall_score * 100)
 
-        # Get top-aligned issues with colors
+        # Get top-aligned issues as simple string list
         sorted_issues = sorted(issue_scores.items(), key=lambda x: x[1], reverse=True)
         top_aligned_issues = []
 
-        colors = ["#FF6B35", "#F7931E", "#FFD23F", "#06FFA5", "#118AB2"]  # Orange, yellow, green, blue palette
-
-        for i, (issue, score) in enumerate(sorted_issues[:5]):
+        for issue, score in sorted_issues[:5]:
             if score >= 0.6:  # Only include reasonably aligned issues
-                color = colors[i % len(colors)]
-                top_issue = TopAlignedIssueSchema(
-                    issue=issue,
-                    color=color
-                )
-                top_aligned_issues.append(top_issue)
+                top_aligned_issues.append(issue)
 
         # Generate overall explanation if using advanced methods
         overall_explanation = None
@@ -991,9 +971,6 @@ class EnhancedMatchingEngine:
 
         return CandidateMatchSchema(
             candidate_id=candidate.candidate_id,
-            candidate_name=getattr(candidate, "name", candidate.candidate_id),
-            candidate_title=getattr(candidate, "title", "Candidate"),
-            candidate_image_url=getattr(candidate, "image_url", None),
             match_percentage=match_percentage,
             match_strength_visual=overall_score,
             top_aligned_issues=top_aligned_issues,
