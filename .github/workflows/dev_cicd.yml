@@ -45,6 +45,7 @@ jobs:
           build-args: |
             POSTGRESQL_DATABASE_URL=${{ secrets.DEV_POSTGRESQL_DATABASE_URL }}
             REDIS_DATABASE_URL=${{ secrets.DEV_REDIS_DATABASE_URL }}
+            CACHE_TTL_SECONDS=${{ secrets.DEV_CACHE_TTL_SECONDS }}
             BACKEND_API_URL=${{ secrets.DEV_BACKEND_API_URL }}
             USE_MOCK_BACKEND_API_URL=${{ secrets.USE_MOCK_BACKEND_API_URL }}
             MOCK_BACKEND_API_URL=${{ secrets.MOCK_BACKEND_API_URL }}
@@ -122,6 +123,7 @@ jobs:
           build-args: |
             POSTGRESQL_DATABASE_URL=${{ secrets.DEV_POSTGRESQL_DATABASE_URL }}
             REDIS_DATABASE_URL=${{ secrets.DEV_REDIS_DATABASE_URL }}
+            CACHE_TTL_SECONDS=${{ secrets.DEV_CACHE_TTL_SECONDS }}
             BACKEND_API_URL=${{ secrets.DEV_BACKEND_API_URL }}
             USE_MOCK_BACKEND_API_URL=${{ secrets.USE_MOCK_BACKEND_API_URL }}
             MOCK_BACKEND_API_URL=${{ secrets.MOCK_BACKEND_API_URL }}
