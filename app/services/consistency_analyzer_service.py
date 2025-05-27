@@ -216,5 +216,5 @@ class ConsistencyAnalyzerService:
 
         return adjusted_score
 
-# Create service instance
+# Create a service instance
 consistency_analyzer_service = ConsistencyAnalyzerService()
