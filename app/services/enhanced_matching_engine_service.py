@@ -10,6 +10,7 @@ from app.services.policy_dimension_discovery_service import policy_dimension_dis
 from app.services.position_inference_service import position_inference_service
 from app.services.consistency_analyzer_service import consistency_analyzer_service
 from app.services.enhanced_matching_calculator_service import enhanced_matching_calculator_service
+from app.services.caching_service import cache_service
 
 class EnhancedMatchingEngine:
     """
@@ -58,7 +59,7 @@ class EnhancedMatchingEngine:
             enhanced_matches.sort(key=lambda x: x.match_percentage, reverse=True)
 
             # Step 7: Generate voter values profile
-            voter_values_profile = self._generate_voter_values_profile(voter_profile, election_analysis)
+            voter_values_profile = await self._generate_voter_values_profile(voter_profile, election_analysis)
 
             # Step 8: Determine processing method and confidence
             processing_method, confidence = self._determine_processing_quality(enhanced_matches, election_analysis)
@@ -327,12 +328,12 @@ class EnhancedMatchingEngine:
         return f"{base_desc} for this policy area."
 
 
-    def _generate_voter_values_profile(
+    async def _generate_voter_values_profile(
             self,
             voter_profile: PersonPolicyProfile,
             election_analysis
     ) -> List[VoterValueProfileSchema]:
-        """Generate voter values profile from policy positions"""
+        """Generate voter values profile from policy positions using LLM"""
 
         values_profile = []
 
@@ -369,8 +370,10 @@ class EnhancedMatchingEngine:
                 else:
                     priority = "Low"
 
-                # Generate description
-                description = self._generate_value_description(avg_position, dimension, positions)
+                # Generate LLM description
+                description = await self._generate_llm_voter_value_description(
+                    dimension, avg_position, positions, priority
+                )
 
                 value_item = VoterValueProfileSchema(
                     issue=dimension.name,
@@ -383,7 +386,151 @@ class EnhancedMatchingEngine:
         priority_order = {"High": 3, "Medium": 2, "Low": 1}
         values_profile.sort(key=lambda x: priority_order[x.priority_level], reverse=True)
 
-        return values_profile[:6]  # Limit to top 6 values
+        return values_profile[:6]
+
+    async def _generate_llm_voter_value_description(
+            self,
+            dimension,
+            avg_position: float,
+            positions: List[PolicyPosition],
+            priority: str
+    ) -> str:
+        """
+        Use LLM to generate natural, personalized voter value descriptions
+        """
+
+        # Check cache first
+        cache_key = f"voter_value_desc:{dimension.dimension_id}:{avg_position}:{priority}:{hash(str([p.reasoning for p in positions]))}"
+        cached_desc = await cache_service.get(cache_key)
+        if cached_desc:
+            return cached_desc
+
+        # Gather context from all positions in this dimension
+        position_contexts = []
+        for pos in positions:
+            if pos.reasoning and len(pos.reasoning.strip()) > 5:
+                position_contexts.append({
+                    "question": pos.source_question,
+                    "answer": pos.source_answer,
+                    "reasoning": pos.reasoning,
+                    "intensity": pos.intensity_multiplier
+                })
+
+        # Create context summary
+        if position_contexts:
+            contexts_text = "\n".join([
+                f"- Question: {ctx['question'][:80]}...\n  Answer: {ctx['answer']}\n  Reasoning: {ctx['reasoning'][:100]}..."
+                for ctx in position_contexts[:3]  # Limit to 3 most relevant
+            ])
+        else:
+            contexts_text = "Direct responses without detailed reasoning provided"
+
+        # Determine stance
+        if avg_position >= 75:
+            stance = "strongly support"
+        elif avg_position >= 60:
+            stance = "support"
+        elif avg_position >= 40:
+            stance = "have mixed feelings about"
+        elif avg_position >= 25:
+            stance = "have concerns about"
+        else:
+            stance = "oppose"
+
+        prompt = f"""
+        Create a personalized description of this voter's values and priorities regarding {dimension.name}.
+        
+        Context:
+        - Policy Area: {dimension.name}
+        - Description: {dimension.description}
+        - Voter's overall stance: {stance} ({avg_position}/100)
+        - Priority level: {priority}
+        - How they responded to questions:
+        {contexts_text}
+        
+        Requirements:
+        - Write in second person ("You")
+        - 1-2 sentences maximum
+        - Explain WHY this matters to them (their motivation/values)
+        - Sound personal and conversational
+        - Focus on their underlying values, not just policy positions
+        - Be specific about what drives their thinking
+        
+        Examples of good descriptions:
+        "You believe every child deserves equal opportunities to succeed, which is why you strongly advocate for expanding access to specialized educational programs."
+        "You prioritize fiscal responsibility and want to ensure new programs have sustainable funding before implementation."
+        "You value community input and believe local voices should drive decisions that affect neighborhood schools."
+        
+        Generate a personalized description:
+        """
+
+        messages = [
+            {"role": "system", "content": "You are an expert at understanding voter motivations and values. Create personal, empathetic descriptions that capture what truly matters to this voter."},
+            {"role": "user", "content": prompt}
+        ]
+
+        try:
+            from app.services.llm_service import llm_service
+
+            response = await llm_service._call_llm(
+                messages,
+                max_tokens=100,
+                temperature=0.4
+            )
+
+            # Clean up the response
+            description = response.strip().strip('"\'').strip()
+
+            # Ensure it starts with "You"
+            if not description.lower().startswith("you"):
+                description = "You " + description.lower()
+
+            # Ensure it ends with a period
+            if not description.endswith('.'):
+                description += '.'
+
+            # Cache the result
+            await cache_service.set(cache_key, description, ttl_seconds=3600)
+
+            self.logger.debug(f"Generated LLM voter value description: {description[:50]}...")
+            return description
+
+        except Exception as e:
+            self.logger.error(f"LLM voter value description failed: {str(e)}")
+            # Fallback to basic description
+            return self._create_fallback_voter_value_description(dimension, avg_position, positions, priority)
+
+    def _create_fallback_voter_value_description(
+            self,
+            dimension,
+            avg_position: float,
+            positions: List[PolicyPosition],
+            priority: str
+    ) -> str:
+        """Fallback description when LLM fails"""
+
+        if avg_position >= 75:
+            stance = "strongly support"
+        elif avg_position >= 60:
+            stance = "support"
+        elif avg_position >= 40:
+            stance = "have mixed views on"
+        elif avg_position >= 25:
+            stance = "have concerns about"
+        else:
+            stance = "oppose"
+
+        # Use reasoning from strongest position if available
+        strongest_pos = max(positions, key=lambda p: p.intensity_multiplier)
+        if strongest_pos.reasoning and len(strongest_pos.reasoning) > 10:
+            clean_reasoning = strongest_pos.reasoning.strip()
+            if len(clean_reasoning) > 60:
+                clean_reasoning = clean_reasoning[:57] + "..."
+            return f"You {stance} {dimension.name.lower()}, believing that {clean_reasoning.lower()}."
+        else:
+            return f"You {stance} {dimension.name.lower()} based on your responses to related questions."
+
+
 
     def _generate_value_description(
             self,
