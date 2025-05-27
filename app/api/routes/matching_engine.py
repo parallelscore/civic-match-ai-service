@@ -5,7 +5,7 @@ from app.utils.logging_util import setup_logger
 from app.api.routes.base_router import RouterManager
 from app.schemas.voters_schema import VoterSubmissionSchema
 from app.services.candidate_service import candidate_service
-from app.services.enhanced_matching_engine_service import enhanced_matching_engine
+from app.services.matching_engine_service import matching_engine
 
 
 class MatchingEngineRouter:
@@ -64,7 +64,7 @@ class MatchingEngineRouter:
             self.logger.info(f"Received enhanced match request for voter {submission.citizen_id} in election {submission.election_id}")
 
             # Process submission using enhanced matching engine
-            results = await enhanced_matching_engine.process_voter_submission(submission)
+            results = await matching_engine.process_voter_submission(submission)
 
             self.logger.info(f"Generated {len(results.matches)} matches for voter {submission.citizen_id} using {results.processing_method}")
 
