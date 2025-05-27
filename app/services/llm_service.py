@@ -58,12 +58,13 @@ class LLMService:
             return None
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    async def _call_llm(self, messages: List[Dict], max_tokens: int = None) -> str:
+    async def _call_llm(self, messages: List[Dict], max_tokens: int = None, temperature: float = None) -> str:
         """Make a call to the configured LLM with retry logic."""
         if not self.client:
             raise ValueError("LLM client not properly initialized")
 
         max_tokens = max_tokens or settings.LLM_MAX_TOKENS
+        temperature = temperature if temperature is not None else settings.LLM_TEMPERATURE
 
         try:
             if self.provider == "openai":
@@ -71,8 +72,8 @@ class LLMService:
                     model=settings.LLM_MODEL,
                     messages=messages,
                     max_tokens=max_tokens,
-                    temperature=settings.LLM_TEMPERATURE,
-                    timeout=settings.LLM_TIMEOUT_SECONDS
+                    temperature=temperature
+                    # Remove timeout parameter here - it's causing the TypeError
                 )
                 return response.choices[0].message.content
 
@@ -90,10 +91,10 @@ class LLMService:
                 response = await self.client.messages.create(
                     model=settings.LLM_MODEL,
                     max_tokens=max_tokens,
-                    temperature=settings.LLM_TEMPERATURE,
+                    temperature=temperature,
                     system=system_message,
-                    messages=user_messages,
-                    timeout=settings.LLM_TIMEOUT_SECONDS
+                    messages=user_messages
+                    # Remove timeout parameter here too
                 )
                 return response.content[0].text
 
