@@ -1,7 +1,7 @@
 import json
 import re
 import asyncio
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any, Coroutine
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 import openai
@@ -58,7 +58,7 @@ class LLMService:
             return None
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    async def _call_llm(self, messages: List[Dict], max_tokens: int = None, temperature: float = None) -> str:
+    async def call_llm(self, messages: List[Dict], max_tokens: int = None, temperature: float = None) -> Any | None:
         """Make a call to the configured LLM with retry logic."""
         if not self.client:
             raise ValueError("LLM client not properly initialized")
@@ -147,7 +147,7 @@ class LLMService:
         ]
 
         try:
-            response = await self._call_llm(messages)
+            response = await self.call_llm(messages)
             topics_data = self._extract_json_from_response(response)
 
             if not topics_data:
@@ -214,7 +214,7 @@ class LLMService:
         ]
 
         try:
-            response = await self._call_llm(messages)
+            response = await self.call_llm(messages)
             similarities_data = self._extract_json_from_response(response)
 
             if not similarities_data:
@@ -264,7 +264,7 @@ class LLMService:
         ]
 
         try:
-            response = await self._call_llm(messages)
+            response = await self.call_llm(messages)
             alignment_data = self._extract_json_from_response(response)
 
             if not alignment_data:
@@ -308,7 +308,7 @@ class LLMService:
         ]
 
         try:
-            response = await self._call_llm(messages)
+            response = await self.call_llm(messages)
             profile_data = self._extract_json_from_response(response)
             return profile_data or []
 
