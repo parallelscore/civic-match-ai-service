@@ -237,6 +237,38 @@ class CacheService:
             self.logger.error(f"Failed to clear election cache: {str(e)}")
             return False
 
+    async def cache_election_policy_analysis(self, election_id: str, analysis: Dict, ttl_seconds: int = None) -> bool:
+        """Cache policy analysis for an election"""
+        key = self._generate_cache_key("election_policy_analysis", election_id)
+        return await self.set(key, analysis, ttl_seconds=ttl_seconds or 86400)
+
+    async def get_election_policy_analysis(self, election_id: str) -> Optional[Dict]:
+        """Get cached policy analysis for an election"""
+        key = self._generate_cache_key("election_policy_analysis", election_id)
+        return await self.get(key)
+
+    async def cache_policy_position(self, cache_key: str, position: Dict, ttl: int = None) -> bool:
+        """Cache a policy position inference"""
+        return await self.set(cache_key, position, ttl_seconds=ttl or 3600)
+
+    async def get_policy_position(self, cache_key: str) -> Optional[Dict]:
+        """Get cached policy position"""
+        return await self.get(cache_key)
+
+    async def cache_consistency_analysis(self, person_id: str, tensions: List[Dict], consistency_score: float) -> bool:
+        """Cache consistency analysis results"""
+        key = self._generate_cache_key("consistency_analysis", person_id)
+        data = {
+            "tensions": tensions,
+            "consistency_score": consistency_score
+        }
+        return await self.set(key, data, ttl_seconds=1800)  # 30 minutes
+
+    async def get_consistency_analysis(self, person_id: str) -> Optional[Dict]:
+        """Get cached consistency analysis"""
+        key = self._generate_cache_key("consistency_analysis", person_id)
+        return await self.get(key)
+
 
 # Create global instance
 cache_service = CacheService()
