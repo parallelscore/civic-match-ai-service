@@ -41,7 +41,7 @@ class PolicyDimensionDiscoveryService:
         # Step 3: Validate and refine
         analysis = await self._validate_and_refine_analysis(dimensions, question_mappings)
 
-        # Step 4: Create final analysis object
+        # Step 4: Create a final analysis object
         election_analysis = ElectionPolicyAnalysis(
             election_id=election_id,
             discovered_dimensions=analysis["dimensions"],
@@ -370,7 +370,7 @@ class PolicyDimensionDiscoveryService:
             dimensions: List[PolicyDimension]
     ) -> PolicyDimension:
         """
-        Find best dimension match using keyword overlap
+        Find the best dimension match using keyword overlap
         """
 
         question_lower = question.lower()
@@ -385,5 +385,5 @@ class PolicyDimensionDiscoveryService:
 
         return best_dimension
 
-# Create service instance
+# Create a service instance
 policy_dimension_discovery_service = PolicyDimensionDiscoveryService()
