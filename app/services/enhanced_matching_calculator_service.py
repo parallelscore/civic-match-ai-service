@@ -291,7 +291,7 @@ class EnhancedMatchingCalculatorService:
             voter_desc = self._create_fallback_position_description(voter_pos, "voter")
             candidate_desc = self._create_fallback_position_description(candidate_pos, "candidate")
 
-        # Add confidence note if low
+        # Add a confidence note if low
         avg_confidence = (voter_pos.confidence + candidate_pos.confidence) / 2
         if avg_confidence < 0.6:
             explanation += " (assessment has limited confidence due to different question types)"
@@ -399,7 +399,7 @@ class EnhancedMatchingCalculatorService:
 
         # Add a consistency penalty note
         if consistency_penalty > 0.1:
-            explanation_parts.append(f"Some internal tensions in policy positions detected.")
+            explanation_parts.append("Some internal tensions in policy positions detected.")
 
         # Add confidence note
         low_confidence_matches = [m for m in dimension_matches if m.confidence_weighted_score < m.alignment_score * 0.8]
@@ -475,7 +475,7 @@ class EnhancedMatchingCalculatorService:
         try:
             from app.services.llm_service import llm_service
 
-            response = await llm_service._call_llm(
+            response = await llm_service.call_llm(
                 messages,
                 max_tokens=100,
                 temperature=0.3
