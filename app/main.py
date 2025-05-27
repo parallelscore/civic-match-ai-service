@@ -11,6 +11,7 @@ from app.api.routes.server_metrics import ServerMetrics
 from app.api.models.model_init import create_all_tables
 from app.api.routes.matching_engine import MatchingEngineRouter
 from app.api.routes.mock_candidates_response import MockCandidatesResponseRouter
+from app.core.matching_config import matching_config
 
 
 def create_app() -> FastAPI:
@@ -53,9 +54,12 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup_event():
         """Initialize services on startup."""
-        print("🚀 Starting CivicMatch Enhanced Matching Engine...")
+        print("🚀 Starting CivicMatch Enhanced Policy Matching Engine...")
 
-        # Initialize semantic service (loads embedding model)
+        # Load configuration
+        print(f"📋 Configuration loaded: {matching_config.max_policy_dimensions} max dimensions")
+
+        # Initialize semantic service (if enabled)
         if settings.ENABLE_SEMANTIC_MATCHING:
             try:
                 from app.services.semantic_matching_service import semantic_service
@@ -85,9 +89,20 @@ def create_app() -> FastAPI:
         except Exception as e:
             print(f"❌ Caching service initialization failed: {e}")
 
-        print("🎯 Enhanced matching engine ready!")
+        # Initialize policy services
+        try:
+            from app.services.policy_dimension_discovery_service import policy_dimension_discovery_service
+            from app.services.position_inference_service import position_inference_service
+            from app.services.consistency_analyzer_service import consistency_analyzer_service
+            print("✅ Policy analysis services initialized")
+        except Exception as e:
+            print(f"❌ Policy services initialization failed: {e}")
+
+        print("🎯 Enhanced policy matching engine ready!")
         print(f"📡 API Documentation: http://localhost:8000/docs")
         print(f"📊 Health Check: http://localhost:8000/api/v1/matching_engine/health")
+        print(f"⚙️  Max Policy Dimensions: {matching_config.max_policy_dimensions}")
+        print(f"🔧 Consistency Analysis: {'Enabled' if matching_config.enable_consistency_analysis else 'Disabled'}")
 
     return app
 
