@@ -60,6 +60,7 @@ jobs:
             EMBEDDING_SIMILARITY_THRESHOLD=${{ secrets.DEV_EMBEDDING_SIMILARITY_THRESHOLD }}
             ENABLE_LLM_MATCHING=${{ secrets.DEV_ENABLE_LLM_MATCHING }}
             ENABLE_SEMANTIC_MATCHING=${{ secrets.DEV_ENABLE_SEMANTIC_MATCHING }}
+            AI_SERVICE_API_URL=${{ secrets.DEV_AI_SERVICE_API_URL }}
 
       - name: Save image tag
         run: echo "::set-output name=image-tag::${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}:dev"
@@ -138,6 +139,7 @@ jobs:
             EMBEDDING_SIMILARITY_THRESHOLD=${{ secrets.DEV_EMBEDDING_SIMILARITY_THRESHOLD }}
             ENABLE_LLM_MATCHING=${{ secrets.DEV_ENABLE_LLM_MATCHING }}
             ENABLE_SEMANTIC_MATCHING=${{ secrets.DEV_ENABLE_SEMANTIC_MATCHING }}
+            AI_SERVICE_API_URL=${{ secrets.DEV_AI_SERVICE_API_URL }}
 
   deploy-to-kubernetes:
     needs: push-docker-image

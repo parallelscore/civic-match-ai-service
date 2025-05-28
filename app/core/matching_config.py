@@ -1,5 +1,6 @@
 # app/core/matching_config.py
-from typing import Dict, List
+
+from typing import Dict
 from pydantic import BaseModel, Field
 
 class MatchingConfiguration(BaseModel):

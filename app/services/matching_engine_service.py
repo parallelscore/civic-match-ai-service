@@ -1,363 +1,545 @@
-import math
+# app/services/matching_engine_service.py
+
+from typing import List
 from datetime import datetime
-from typing import Any, Tuple
 
 from app.utils.logging_util import setup_logger
-from app.schemas.voters_schema import VoterSubmissionSchema
+from app.services.caching_service import cache_service
 from app.services.candidate_service import candidate_service
-from app.schemas.candidate_schema import CandidateResponseSchema
-from app.schemas.voters_schema import CandidateMatchSchema, MatchResultsResponseSchema, IssueMatchDetailSchema
+from app.services.position_inference_service import position_inference_service
+from app.services.consistency_analyzer_service import consistency_analyzer_service
+from app.services.policy_dimension_discovery_service import policy_dimension_discovery_service
+from app.services.enhanced_matching_calculator_service import enhanced_matching_calculator_service
+from app.schemas.policy_matching_schema import PersonPolicyProfile, PolicyPosition, EnhancedMatchResult
+from app.schemas.voters_schema import VoterSubmissionSchema, MatchResultsResponseSchema, VoterValueProfileSchema
 
 
-class MatchingEngine:
+class MatchingEngineService:
     """
-    Core matching engine service that implements the matching algorithm.
-
-    This engine:
-    1. Processes voter responses
-    2. Retrieves candidate responses from the candidate service
-    3. Calculates match scores
-    4. Generates and returns match results
+    Main enhanced matching engine that orchestrates the multi-layer matching process
     """
 
     def __init__(self):
-
         self.logger = setup_logger(__name__)
 
     async def process_voter_submission(self, submission: VoterSubmissionSchema) -> MatchResultsResponseSchema:
         """
-        Process a voter's submission of responses and generate match results.
-
-        Args:
-            submission: The voter's submission containing responses to questions
-
-        Returns:
-            Match results for all candidates
+        Process voter submission using the enhanced policy-based matching system
         """
-        self.logger.info(
-            f"Processing submission for voter {submission.citizen_id} in election {submission.election_id}")
 
-        # Step 1: Get candidates for the election
-        candidates = await candidate_service.get_candidates_for_election(submission.election_id)
-        self.logger.info(f"Retrieved {len(candidates)} candidates for election {submission.election_id}")
+        self.logger.debug(submission)
 
-        if not candidates:
-            self.logger.warning(f"No candidates found for election {submission.election_id}")
+        self.logger.info(f"Processing enhanced submission for voter {submission.citizen_id} in election {submission.election_id}")
+
+        try:
+            # Step 1: Get candidates
+            candidates = await candidate_service.get_candidates_for_election(submission.election_id)
+            if not candidates:
+                return self._create_no_candidates_response(submission)
+
+            # Step 2: Discover policy dimensions for this election
+            all_questions = self._extract_all_questions(submission, candidates)
+            election_analysis = await policy_dimension_discovery_service.discover_election_policy_dimensions(
+                submission.election_id, all_questions
+            )
+
+            self.logger.info(f"Discovered {len(election_analysis.discovered_dimensions)} policy dimensions")
+
+            # Step 3: Create voter policy profile
+            voter_profile = await self._create_voter_policy_profile(submission, election_analysis)
+
+            # Step 4: Create candidate policy profiles
+            candidate_profiles = await self._create_candidate_policy_profiles(candidates, election_analysis)
+
+            # Step 5: Calculate matches
+            enhanced_matches = []
+            for candidate_profile in candidate_profiles:
+                match_result = await enhanced_matching_calculator_service.calculate_enhanced_match(
+                    voter_profile, candidate_profile
+                )
+                enhanced_matches.append(self._convert_to_legacy_format(match_result))
+
+            # Step 6: Sort by match percentage
+            enhanced_matches.sort(key=lambda x: x.match_percentage, reverse=True)
+
+            # Step 7: Generate voter values profile
+            voter_values_profile = await self._generate_voter_values_profile(voter_profile, election_analysis)
+
+            # Step 8: Determine processing method and confidence
+            processing_method, confidence = self._determine_processing_quality(enhanced_matches, election_analysis)
+
+            self.logger.info(f"Processing method: {processing_method}, Confidence: {confidence:.2f}")
+
             return MatchResultsResponseSchema(
                 citizen_id=submission.citizen_id,
                 election_id=submission.election_id,
-                matches=[],
-                generated_at=datetime.now()
+                voter_values_profile=voter_values_profile,
+                matches=enhanced_matches,
+                generated_at=datetime.now(),
+                processing_method=processing_method,
+                confidence_score=confidence
             )
 
-        # Step 2: Calculate matches for each candidate
-        match_results = []
-        for candidate in candidates:
-            match_result = self._calculate_match(submission, candidate)
-            match_results.append(match_result)
+        except Exception as e:
+            self.logger.error(f"Enhanced matching failed: {str(e)}")
 
-        # Step 3: Sort matches by overall score (descending)
-        match_results.sort(key=lambda x: x.match_percentage, reverse=True)
+            # Fallback to basic matching or error response
+            return self._create_error_response(submission, str(e))
+
+    @staticmethod
+    def _extract_all_questions(submission: VoterSubmissionSchema, candidates: List) -> List[str]:
+        """Extract all unique questions from voter and candidates"""
+
+        all_questions = set()
+
+        # Add voter questions
+        for response in submission.responses:
+            all_questions.add(response.question)
+
+        # Add candidate questions
+        for candidate in candidates:
+            for response in candidate.responses:
+                all_questions.add(response.question)
+
+        return list(all_questions)
+
+    @staticmethod
+    async def _create_voter_policy_profile(submission: VoterSubmissionSchema, election_analysis) -> PersonPolicyProfile:
+        """Create comprehensive policy profile for voter"""
+
+        policy_positions = []
+
+        # Create mapping lookup for efficiency
+        question_to_dimension = {}
+        for mapping in election_analysis.question_mappings:
+            question_to_dimension[mapping.question] = mapping
+
+        # Process each voter response
+        for response in submission.responses:
+            question = response.question
+
+            if question in question_to_dimension:
+                mapping = question_to_dimension[question]
+
+                # Find the corresponding dimension
+                dimension = next(
+                    (d for d in election_analysis.discovered_dimensions if d.dimension_id == mapping.primary_dimension_id),
+                    None
+                )
+
+                if dimension:
+                    # Infer position for primary dimension
+                    position = await position_inference_service.infer_policy_position(
+                        question=question,
+                        answer=response.answer,
+                        comment="",  # Voters typically don't have comments
+                        dimension=dimension,
+                        person_type="voter"
+                    )
+                    policy_positions.append(position)
+
+                    # Handle secondary dimensions if they exist
+                    for sec_dim_id in mapping.secondary_dimension_ids:
+                        sec_dimension = next(
+                            (d for d in election_analysis.discovered_dimensions if d.dimension_id == sec_dim_id),
+                            None
+                        )
+                        if sec_dimension:
+                            # Create weighted position for secondary dimension
+                            sec_weight = mapping.secondary_weights.get(sec_dim_id, 0.3)
+                            sec_position = await position_inference_service.infer_policy_position(
+                                question=question,
+                                answer=response.answer,
+                                comment="",
+                                dimension=sec_dimension,
+                                person_type="voter"
+                            )
+                            # Adjust confidence and intensity for secondary mapping
+                            sec_position.confidence *= sec_weight
+                            sec_position.intensity_multiplier *= sec_weight
+                            policy_positions.append(sec_position)
+
+        # Analyze consistency
+        tensions, consistency_score = consistency_analyzer_service.analyze_position_consistency(policy_positions)
+
+        return PersonPolicyProfile(
+            person_id=submission.citizen_id,
+            person_type="voter",
+            policy_positions=policy_positions,
+            logical_tensions=tensions,
+            overall_consistency_score=consistency_score
+        )
+
+    async def _create_candidate_policy_profiles(self, candidates: List, election_analysis) -> List[PersonPolicyProfile]: #used
+        """Create policy profiles for all candidates"""
+
+        candidate_profiles = []
+
+        for candidate in candidates:
+            profile = await self._create_single_candidate_profile(candidate, election_analysis)
+            candidate_profiles.append(profile)
+
+        return candidate_profiles
+
+    @staticmethod
+    async def _create_single_candidate_profile(candidate, election_analysis) -> PersonPolicyProfile:
+        """Create a policy profile for a single candidate"""
+
+        policy_positions = []
+
+        # Create mapping lookup
+        question_to_dimension = {}
+        for mapping in election_analysis.question_mappings:
+            question_to_dimension[mapping.question] = mapping
+
+        # Process each candidate response
+        for response in candidate.responses:
+            question = response.question
+
+            if question in question_to_dimension:
+                mapping = question_to_dimension[question]
+
+                # Find dimension
+                dimension = next(
+                    (d for d in election_analysis.discovered_dimensions if d.dimension_id == mapping.primary_dimension_id),
+                    None
+                )
+
+                if dimension:
+                    # Infer position with comment enhancement
+                    position = await position_inference_service.infer_policy_position(
+                        question=question,
+                        answer=response.answer,
+                        comment=getattr(response, 'comment', ''),
+                        dimension=dimension,
+                        person_type="candidate"
+                    )
+                    policy_positions.append(position)
+
+                    # Handle secondary dimensions
+                    for sec_dim_id in mapping.secondary_dimension_ids:
+                        sec_dimension = next(
+                            (d for d in election_analysis.discovered_dimensions if d.dimension_id == sec_dim_id),
+                            None
+                        )
+                        if sec_dimension:
+                            sec_weight = mapping.secondary_weights.get(sec_dim_id, 0.3)
+                            sec_position = await position_inference_service.infer_policy_position(
+                                question=question,
+                                answer=response.answer,
+                                comment=getattr(response, 'comment', ''),
+                                dimension=sec_dimension,
+                                person_type="candidate"
+                            )
+                            sec_position.confidence *= sec_weight
+                            sec_position.intensity_multiplier *= sec_weight
+                            policy_positions.append(sec_position)
+
+        # Analyze consistency
+        tensions, consistency_score = consistency_analyzer_service.analyze_position_consistency(policy_positions)
+
+        return PersonPolicyProfile(
+            person_id=candidate.candidate_id,
+            person_type="candidate",
+            policy_positions=policy_positions,
+            logical_tensions=tensions,
+            overall_consistency_score=consistency_score
+        )
+
+    def _convert_to_legacy_format(self, enhanced_result: EnhancedMatchResult): #used
+        """Convert an enhanced match result to legacy format with LLM descriptions"""
+
+        from app.schemas.voters_schema import CandidateMatchSchema, IssueMatchDetailSchema
+
+        # Convert dimension matches to issue matches
+        issue_matches = []
+        for dim_match in enhanced_result.dimension_matches:
+            issue_match = IssueMatchDetailSchema(
+                issue=dim_match.dimension_name,
+                alignment=self._get_alignment_level(dim_match.alignment_score),
+                alignment_score=dim_match.alignment_score,
+                voter_position=dim_match.voter_position_description or "No description available",
+                candidate_position=dim_match.candidate_position_description or "No description available",
+                explanation=dim_match.alignment_explanation
+            )
+            issue_matches.append(issue_match)
+
+        # Limit top-aligned issues to 3
+        top_aligned_issues = enhanced_result.top_aligned_dimensions[:3]
+
+        return CandidateMatchSchema(
+            candidate_id=enhanced_result.candidate_id,
+            match_percentage=enhanced_result.overall_match_percentage,
+            match_strength_visual=enhanced_result.overall_match_percentage / 100.0,
+            top_aligned_issues=top_aligned_issues,
+            issue_matches=issue_matches,
+            overall_explanation=enhanced_result.match_explanation
+        )
+
+    async def _generate_voter_values_profile(
+            self,
+            voter_profile: PersonPolicyProfile,
+            election_analysis
+    ) -> List[VoterValueProfileSchema]: #used
+        """Generate voter values profile from policy positions using LLM"""
+
+        values_profile = []
+
+        # Group positions by dimension for analysis
+        dimension_positions = {}
+        for position in voter_profile.policy_positions:
+            if position.dimension_id not in dimension_positions:
+                dimension_positions[position.dimension_id] = []
+            dimension_positions[position.dimension_id].append(position)
+
+        # Create a value profile for each dimension where a voter has strong positions
+        for dimension_id, positions in dimension_positions.items():
+            # Find dimension info
+            dimension = next(
+                (d for d in election_analysis.discovered_dimensions if d.dimension_id == dimension_id),
+                None
+            )
+
+            if not dimension:
+                continue
+
+            # Calculate average position and intensity
+            avg_position = sum(p.position_score for p in positions) / len(positions)
+            avg_intensity = sum(p.intensity_multiplier for p in positions) / len(positions)
+
+            # Only include if voter has meaningful position (not neutral)
+            if abs(avg_position - 50) > 15:  # More than 15 points from neutral
+
+                # Determine priority level based on intensity and position strength
+                if avg_intensity >= 1.5 and abs(avg_position - 50) > 25:
+                    priority = "High"
+                elif avg_intensity >= 1.0 or abs(avg_position - 50) > 20:
+                    priority = "Medium"
+                else:
+                    priority = "Low"
+
+                # Generate LLM description
+                description = await self._generate_llm_voter_value_description(
+                    dimension, avg_position, positions, priority
+                )
+
+                value_item = VoterValueProfileSchema(
+                    issue=dimension.name,
+                    description=description,
+                    priority_level=priority
+                )
+                values_profile.append(value_item)
+
+        # Sort by priority (High -> Medium -> Low)
+        priority_order = {"High": 3, "Medium": 2, "Low": 1}
+        values_profile.sort(key=lambda x: priority_order[x.priority_level], reverse=True)
+
+        return values_profile[:6]
+
+    async def _generate_llm_voter_value_description(
+            self,
+            dimension,
+            avg_position: float,
+            positions: List[PolicyPosition],
+            priority: str
+    ) -> str:
+        """
+        Use LLM to generate natural, personalized voter value descriptions
+        """
+
+        # Check cache first
+        cache_key = f"voter_value_desc:{dimension.dimension_id}:{avg_position}:{priority}:{hash(str([p.reasoning for p in positions]))}"
+        cached_desc = await cache_service.get(cache_key)
+        if cached_desc:
+            return cached_desc
+
+        # Gather context from all positions in this dimension
+        position_contexts = []
+        for pos in positions:
+            if pos.reasoning and len(pos.reasoning.strip()) > 5:
+                position_contexts.append({
+                    "question": pos.source_question,
+                    "answer": pos.source_answer,
+                    "reasoning": pos.reasoning,
+                    "intensity": pos.intensity_multiplier
+                })
+
+        # Create a context summary
+        if position_contexts:
+            contexts_text = "\n".join([
+                f"- Question: {ctx['question'][:80]}...\n  Answer: {ctx['answer']}\n  Reasoning: {ctx['reasoning'][:100]}..."
+                for ctx in position_contexts[:3]  # Limit to 3 most relevant
+            ])
+        else:
+            contexts_text = "Direct responses without detailed reasoning provided"
+
+        # Determine stance
+        if avg_position >= 75:
+            stance = "strongly support"
+        elif avg_position >= 60:
+            stance = "support"
+        elif avg_position >= 40:
+            stance = "have mixed feelings about"
+        elif avg_position >= 25:
+            stance = "have concerns about"
+        else:
+            stance = "oppose"
+
+        prompt = f"""
+        Create a personalized description of this voter's values and priorities regarding {dimension.name}.
+        
+        Context:
+        - Policy Area: {dimension.name}
+        - Description: {dimension.description}
+        - Voter's overall stance: {stance} ({avg_position}/100)
+        - Priority level: {priority}
+        - How they responded to questions:
+        {contexts_text}
+        
+        Requirements:
+        - Write in second person ("You")
+        - 1-2 sentences maximum
+        - Explain WHY this matters to them (their motivation/values)
+        - Sound personal and conversational
+        - Focus on their underlying values, not just policy positions
+        - Be specific about what drives their thinking
+        
+        Examples of good descriptions:
+        "You believe every child deserves equal opportunities to succeed, which is why you strongly advocate for expanding access to specialized educational programs."
+        "You prioritize fiscal responsibility and want to ensure new programs have sustainable funding before implementation."
+        "You value community input and believe local voices should drive decisions that affect neighborhood schools."
+        
+        Generate a personalized description:
+        """
+
+        messages = [
+            {"role": "system", "content": "You are an expert at understanding voter motivations and values. Create personal, empathetic descriptions that capture what truly matters to this voter."},
+            {"role": "user", "content": prompt}
+        ]
+
+        try:
+            from app.services.llm_service import llm_service
+
+            response = await llm_service.call_llm(
+                messages,
+                max_tokens=100,
+                temperature=0.4
+            )
+
+            # Clean up the response
+            description = response.strip().strip('"\'').strip()
+
+            # Ensure it starts with "You"
+            if not description.lower().startswith("you"):
+                description = "You " + description.lower()
+
+            # Ensure it ends with a period
+            if not description.endswith('.'):
+                description += '.'
+
+            # Cache the result
+            await cache_service.set(cache_key, description, ttl_seconds=3600)
+
+            self.logger.debug(f"Generated LLM voter value description: {description[:50]}...")
+            return description
+
+        except Exception as e:
+            self.logger.error(f"LLM voter value description failed: {str(e)}")
+            # Fallback to the basic description
+            return self._create_fallback_voter_value_description(dimension, avg_position, positions, priority)
+
+    @staticmethod
+    def _create_fallback_voter_value_description(dimension, avg_position: float, positions: List[PolicyPosition], priority: str) -> str:
+        """Fallback description when LLM fails"""
+
+        if avg_position >= 75:
+            stance = "strongly support"
+        elif avg_position >= 60:
+            stance = "support"
+        elif avg_position >= 40:
+            stance = "have mixed views on"
+        elif avg_position >= 25:
+            stance = "have concerns about"
+        else:
+            stance = "oppose"
+
+        # Use reasoning from the strongest position if available
+        strongest_pos = max(positions, key=lambda p: p.intensity_multiplier)
+        if strongest_pos.reasoning and len(strongest_pos.reasoning) > 10:
+            clean_reasoning = strongest_pos.reasoning.strip()
+            if len(clean_reasoning) > 60:
+                clean_reasoning = clean_reasoning[:57] + "..."
+            return f"You {stance} {dimension.name.lower()}, believing that {clean_reasoning.lower()}."
+        else:
+            return f"You {stance} {dimension.name.lower()} based on your responses to related questions."
+
+    @staticmethod
+    def _determine_processing_quality(matches: List, election_analysis) -> tuple[str, float]:
+        """Determine processing method and confidence"""
+
+        if not matches:
+            return "no_matches", 0.0
+
+        # Check if we have a good dimension discovery
+        avg_dimension_confidence = sum(d.confidence for d in election_analysis.discovered_dimensions) / len(election_analysis.discovered_dimensions)
+
+        # Check match quality
+        high_quality_matches = sum(1 for m in matches if m.match_percentage >= 60)
+        has_detailed_explanations = any(m.overall_explanation for m in matches)
+
+        # Base confidence on dimension discovery quality
+        base_confidence = avg_dimension_confidence
+
+        if has_detailed_explanations and high_quality_matches >= 2:
+            return "policy_enhanced", min(0.95, base_confidence + 0.2)
+        elif high_quality_matches >= 1:
+            return "policy_based", min(0.85, base_confidence + 0.1)
+        elif matches:
+            return "basic_policy", max(0.6, base_confidence)
+        else:
+            return "fallback", 0.3
+
+    @staticmethod
+    def _create_no_candidates_response(submission: VoterSubmissionSchema) -> MatchResultsResponseSchema:
+        """Create response when no candidates found"""
 
         return MatchResultsResponseSchema(
             citizen_id=submission.citizen_id,
             election_id=submission.election_id,
-            matches=match_results,
-            generated_at=datetime.now()
+            voter_values_profile=[],
+            matches=[],
+            generated_at=datetime.now(),
+            processing_method="no_candidates",
+            confidence_score=0.0
         )
 
-    def _calculate_match(self, voter_submission: VoterSubmissionSchema,
-                         candidate: CandidateResponseSchema) -> CandidateMatchSchema:
-        """
-        Calculate a match between a voter and a candidate.
+    def _create_error_response(self, submission: VoterSubmissionSchema, error_message: str) -> MatchResultsResponseSchema:
+        """Create error response"""
 
-        Args:
-            voter_submission: The voter's submission
-            candidate: The candidate's information and responses
+        self.logger.error(f"Creating error response: {error_message}")
 
-        Returns:
-            Match result between the voter and candidate
-        """
-        # Organization by question
-        voter_responses = {r.question: r for r in voter_submission.responses}
-        candidate_responses = {r.question: r for r in candidate.responses}
-
-        # Find common questions
-        common_questions = set(voter_responses.keys()).intersection(set(candidate_responses.keys()))
-        self.logger.info(
-            f"Found {len(common_questions)} common questions between voter and candidate {candidate.candidate_id}")
-
-        if not common_questions:
-            # No common questions, no match
-            return CandidateMatchSchema(
-                candidate_id=candidate.candidate_id,
-                candidate_name=getattr(candidate, "name", candidate.candidate_id),
-                candidate_title="Candidate",
-                match_percentage=0,
-                top_aligned_issues=[],
-                issue_matches=[]
-            )
-
-        # Categorize questions by issue/topic
-        issue_categories = self._categorize_questions(common_questions, voter_responses, candidate_responses)
-
-        # Calculate issue match details and scores
-        issue_matches = []
-        issue_scores = {}
-
-        for issue, questions in issue_categories.items():
-            # Calculate the average score for this issue
-            scores = []
-            for question in questions:
-                voter_answer = voter_responses[question].answer
-                candidate_answer = candidate_responses[question].answer
-
-                similarity, _ = self._calculate_similarity(
-                    voter_answer,
-                    candidate_answer,
-                    self._determine_response_type(voter_answer)
-                )
-                scores.append(similarity)
-
-            # Calculate issue score
-            avg_score = sum(scores) / len(scores) if scores else 0
-            issue_scores[issue] = avg_score
-
-            # Get an alignment level
-            alignment = self._get_alignment_level(avg_score)
-
-            # For display purposes, select the first question's responses
-            sample_question = questions[0]
-            voter_position = self._format_position(voter_responses[sample_question].answer)
-            candidate_position = self._format_position(candidate_responses[sample_question].answer)
-
-            # Create issue match detail
-            issue_match = IssueMatchDetailSchema(
-                issue=issue,
-                alignment=alignment,
-                voter_position=voter_position,
-                candidate_position=candidate_position
-            )
-            issue_matches.append(issue_match)
-
-        # Calculate overall match percentage (0-100)
-        overall_score = sum(issue_scores.values()) / len(issue_scores) if issue_scores else 0
-        match_percentage = math.floor(overall_score * 100)
-
-        # Get top-aligned issues (up to 3)
-        sorted_issues = sorted(issue_scores.items(), key=lambda x: x[1], reverse=True)
-        top_aligned_issues = [issue for issue, score in sorted_issues[:3] if score >= 0.6]
-
-        return CandidateMatchSchema(
-            candidate_id=candidate.candidate_id,
-            candidate_name=getattr(candidate, "name", candidate.candidate_id),
-            candidate_title="Senate Candidate",  # Default title can be customized
-            match_percentage=match_percentage,
-            top_aligned_issues=top_aligned_issues,
-            issue_matches=issue_matches
+        return MatchResultsResponseSchema(
+            citizen_id=submission.citizen_id,
+            election_id=submission.election_id,
+            voter_values_profile=[],
+            matches=[],
+            generated_at=datetime.now(),
+            processing_method="error",
+            confidence_score=0.0
         )
 
-    def _categorize_questions(self, common_questions, voter_responses, candidate_responses):
-        """
-        Categorize questions into issue categories based on the category field in responses.
-
-        Args:
-            common_questions: Set of common questions between voter and candidate
-            voter_responses: Dictionary mapping question text to voter response
-
-        Returns:
-            Dictionary mapping categories to lists of questions
-        """
-        categories = {}
-
-        for question in common_questions:
-            # Get the category from voter response
-            voter_response = voter_responses[question]
-            category = getattr(voter_response, 'category', None)
-
-            # If no category is provided, use a more readable name based on keywords
-            if not category:
-                category = self._determine_category_from_keywords(question)
-
-            # Add the question to the appropriate category
-            if category not in categories:
-                categories[category] = []
-            categories[category].append(question)
-
-        return categories
-
+        # Utility methods
     @staticmethod
-    def _determine_category_from_keywords(question):
-        """
-        Determine category based on keywords in the question text.
-        This is a fallback for when no category is provided.
-        """
-        keywords = {
-            "language immersion": "Education Access",
-            "access": "Education Access",
-            "mental health": "Student Support",
-            "counselors": "Student Support",
-            "resources for students": "Student Support",
-            "funding": "School Funding",
-            "budget": "School Funding",
-            "vocational": "Vocational Training",
-            "career": "Vocational Training",
-            "technical education": "Vocational Training",
-            "sro": "School Safety",
-            "officers": "School Safety",
-            "safe": "School Safety",
-            "community": "Community Engagement",
-            "families": "Community Engagement",
-            "improved": "Educational Progress",
-            "progress": "Educational Progress"
-        }
-
-        # Check if any keyword is in the question
-        for keyword, category in keywords.items():
-            if keyword.lower() in question.lower():
-                return category
-
-        # Default category if no keywords match
-        return "Other Issues"
-
-    @staticmethod
-    def _get_alignment_level(score):
-        """Convert a numeric score to an alignment level string."""
+    def _get_alignment_level(score: float) -> str:
+        """Convert score to alignment level"""
         if score >= 0.8:
             return "Strongly Aligned"
-        elif score >= 0.5:
+        elif score >= 0.6:
             return "Moderately Aligned"
+        elif score >= 0.4:
+            return "Somewhat Aligned"
         else:
             return "Weakly Aligned"
 
-    @staticmethod
-    def _format_position(answer):
-        """Format an answer into a readable position statement."""
-        if isinstance(answer, bool):
-            return "Yes" if answer else "No"
-        elif isinstance(answer, list):
-            return ", ".join(answer)
-        else:
-            # Limit text length for display
-            text = str(answer)
-            if len(text) > 100:
-                return text[:97] + "..."
-            return text
-
-    @staticmethod
-    def _determine_response_type(answer: Any) -> str:
-        """Determine the response type based on the answer."""
-        if isinstance(answer, bool):
-            return 'binary'
-        elif isinstance(answer, list):
-            return 'multiple-choice'
-        elif isinstance(answer, dict):
-            return 'ranking'
-        else:
-            return 'text'
-
-    @staticmethod
-    def _calculate_similarity(voter_answer: Any, candidate_answer: Any, response_type: str) -> Tuple[float, str]:
-        """
-        Calculate similarity between voter and candidate answers.
-
-        Returns:
-            Tuple of (similarity_score, explanation)
-        """
-        if response_type == 'binary':
-            # Direct binary comparison
-            similarity = 1.0 if voter_answer == candidate_answer else 0.0
-            explanation = "Exact match" if math.isclose(similarity, 1.0, rel_tol=1e-09, abs_tol=1e-09) else \
-                "Different responses"
-
-        elif response_type == 'multiple-choice':
-            # Calculate Jaccard similarity for multiple choice
-            voter_set = set(voter_answer if isinstance(voter_answer, list) else [voter_answer])
-            candidate_set = set(candidate_answer if isinstance(candidate_answer, list) else [candidate_answer])
-
-            if not voter_set or not candidate_set:
-                similarity = 0.0
-                explanation = "One or both responses are empty"
-            else:
-                intersection = len(voter_set.intersection(candidate_set))
-                union = len(voter_set.union(candidate_set))
-                similarity = intersection / union if union > 0 else 0.0
-
-                if math.isclose(similarity, 1.0, rel_tol=1e-09, abs_tol=1e-09):
-                    explanation = "Exact match on all selections"
-                elif similarity > 0:
-                    explanation = f"Partial match: {intersection} common selections out of {union} total"
-                else:
-                    explanation = "No common selections"
-
-        elif response_type == 'ranking':
-            # Handle ranking comparison
-            # For MVP, we'll use a simplified approach to comparing top choices
-            voter_ranking = voter_answer
-            candidate_ranking = candidate_answer
-
-            # Get top 3 choices from each ranking
-            voter_top = list(voter_ranking.keys())[:3] if isinstance(voter_ranking, dict) else []
-            candidate_top = list(candidate_ranking.keys())[:3] if isinstance(candidate_ranking, dict) else []
-
-            # Calculate similarity based on the presence and position of items
-            common_items = set(voter_top).intersection(set(candidate_top))
-            similarity = len(common_items) / max(len(voter_top), len(candidate_top))
-
-            if math.isclose(similarity, 1.0, rel_tol=1e-09, abs_tol=1e-09) and voter_top == candidate_top:
-                explanation = "Exact match on priorities"
-            elif similarity > 0:
-                explanation = f"Partial match: {len(common_items)} common priorities"
-            else:
-                explanation = "Different priorities"
-
-        else:  # text responses
-            # For text responses, try to check for agreement/disagreement phrases
-            voter_text = str(voter_answer).lower()
-            candidate_text = str(candidate_answer).lower()
-
-            # Check for the exact match first
-            if voter_text == candidate_text:
-                similarity = 1.0
-                explanation = "Exact text match"
-            else:
-                # Simple text similarity: % of words in common
-                voter_words = set(voter_text.split())
-                candidate_words = set(candidate_text.split())
-
-                if not voter_words or not candidate_words:
-                    similarity = 0.0
-                    explanation = "One or both responses are empty"
-                else:
-                    common_words = voter_words.intersection(candidate_words)
-                    all_words = voter_words.union(candidate_words)
-                    similarity = len(common_words) / len(all_words)
-
-                    # Additional check for agreement words
-                    agreement_words = {"agree", "support", "yes", "approve", "favor"}
-                    disagreement_words = {"disagree", "oppose", "no", "disapprove", "against"}
-
-                    voter_agrees = any(word in voter_text for word in agreement_words)
-                    voter_disagrees = any(word in voter_text for word in disagreement_words)
-                    candidate_agrees = any(word in candidate_text for word in agreement_words)
-                    candidate_disagrees = any(word in candidate_text for word in disagreement_words)
-
-                    # Boost similarity if both agree or both disagree
-                    if (voter_agrees and candidate_agrees) or (voter_disagrees and candidate_disagrees):
-                        similarity = max(similarity, 0.8)
-                    # Reduce similarity if one agrees and one disagrees
-                    elif (voter_agrees and candidate_disagrees) or (voter_disagrees and candidate_agrees):
-                        similarity = min(similarity, 0.2)
-
-                    if similarity >= 0.7:
-                        explanation = "High text similarity"
-                    elif similarity >= 0.3:
-                        explanation = "Moderate text similarity"
-                    else:
-                        explanation = "Low text similarity"
-
-        return similarity, explanation
-
-
-# Create an instance for dependency injection
-matching_engine = MatchingEngine()
+# Create a service instance
+matching_engine = MatchingEngineService()

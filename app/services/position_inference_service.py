@@ -186,7 +186,7 @@ class PositionInferenceService:
         ]
 
         try:
-            response = await llm_service._call_llm(
+            response = await llm_service.call_llm(
                 messages,
                 max_tokens=300,
                 temperature=matching_config.position_inference_temperature

@@ -9,8 +9,9 @@ class VoterResponseItemSchema(CamelModel):
     """Schema for a voter's response to a question."""
     question_id: str
     question: str
+    category_id: Optional[str] = None
+    category_name: Optional[str] = None
     answer: Union[str, bool, List[str], Dict[str, Any]]
-    category: Optional[str] = None
 
 
 class VoterSubmissionSchema(CamelModel):

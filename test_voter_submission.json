@@ -1,59 +1,62 @@
 {
   "electionId": "29ae2266-0c83-4707-85b8-5f278335e76b",
-  "citizenId": "v001",
+  "citizenId": "78b8c307-26a3-4e70-8ee1-664158211054",
   "responses": [
     {
-      "questionId": "q001",
-      "question": "Should your neighborhood students have access to a language immersion middle school within a 30-minute commute?",
-      "answer": "Strongly Agree",
-      "category": "Education Access"
+      "questionId": "0973d536-7b60-4341-b1bb-3da9b44ba5b7",
+      "question": "How many years have you lived in Ward 8?",
+      "categoryId": "d95e8d2f-1e6e-4550-8b95-ee9510355b60",
+      "categoryName": "Basic Info",
+      "answer": "0-5 years"
     },
     {
-      "questionId": "q002",
-      "question": "Which educational programs should receive increased funding? (Select all that apply)",
-      "answer": [
-        "STEM initiatives",
-        "Special education",
-        "Arts and music"
-      ],
-      "category": "School Funding"
+      "questionId": "af5414c1-afda-44a8-9595-b896682ca1b0",
+      "question": "Should Ward 8 students have access to a language immersion middle school within a 30-minute commute?",
+      "categoryId": "e0993b3d-7484-4663-87a7-c894c685deab",
+      "categoryName": "Education",
+      "answer": "Agree"
     },
     {
-      "questionId": "q003",
-      "question": "Do you think it's essential for the your neighborhood council member to prioritize mental health resources for students?",
-      "answer": "Strongly Agree",
-      "category": "Student Support"
+      "questionId": "e778341b-379f-456e-8098-c9715487b96a",
+      "question": "Do you think it's essential for the Ward 8 council member to prioritize mental health resources for students?",
+      "categoryId": "3d0505b7-fa8e-48f1-8582-93ddfa5da50d",
+      "categoryName": "Student Support",
+      "answer": "Strongly Agree"
     },
     {
-      "questionId": "q004",
-      "question": "Do you believe School Resource Officers (SROs) effectively keep your neighborhood schools safe?",
-      "answer": "Strongly Disagree",
-      "category": "School Safety"
+      "questionId": "3338055d-16b1-42d2-9f10-93c57d5320c8",
+      "question": "Do you believe School Resource Officers (SROs) effectively keep Ward 8 schools safe?",
+      "categoryId": "3d0505b7-fa8e-48f1-8582-93ddfa5da50d",
+      "categoryName": "Student Support",
+      "answer": "Agree"
     },
     {
-      "questionId": "q005",
-      "question": "Should your your neighborhood council member actively pass legislation benefiting your neighborhood students and families?",
-      "answer": "Agree",
-      "category": "Community Engagement"
+      "questionId": "fe94cba0-1029-4c6d-a416-197b2c698c3a",
+      "question": "Should your Ward 8 council member actively pass legislation benefiting Ward 8 students and families?",
+      "categoryId": "0aa5be66-d311-42b1-b79d-6ccbf81e61c2",
+      "categoryName": "Policy Advocacy",
+      "answer": "Strongly Agree"
     },
     {
-      "questionId": "q006",
-      "question": "Has education in your neighborhood improved over the last 20 years?",
-      "answer": "Disagree",
-      "category": "Educational Progress"
+      "questionId": "f011330c-25cc-4c96-89d7-aaa8cce3b042",
+      "question": "Has education in Ward 8 improved over the last 20 years?",
+      "categoryId": "0aa5be66-d311-42b1-b79d-6ccbf81e61c2",
+      "categoryName": "Policy Advocacy",
+      "answer": "Agree"
     },
     {
-      "questionId": "q007",
-      "question": "What is your top priority for public schools?",
-      "answer": "Increase funding for public schools",
-      "category": "School Funding"
+      "questionId": "426a2f69-685e-4783-8c9e-45c4cc08279e",
+      "question": "What is your top priority in your neighborhood",
+      "categoryId": "14479c74-40c3-4ab7-9ab1-b52212be108b",
+      "categoryName": "Priorities",
+      "answer": "Student Safety"
     },
     {
-      "questionId": "q008",
-      "question": "Do you support vocational training in schools?",
-      "answer": "Strongly Agree",
-      "category": "Vocational Training"
+      "questionId": "5172d72a-6ad0-436d-8b05-f72efee72823",
+      "question": "What is your second highest priority?",
+      "categoryId": "14479c74-40c3-4ab7-9ab1-b52212be108b",
+      "categoryName": "Priorities",
+      "answer": "Increasing Graduation Rates"
     }
-  ],
-  "completed_at": "2025-05-13T09:30:45.123Z"
+  ]
 }

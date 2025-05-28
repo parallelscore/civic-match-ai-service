@@ -16,6 +16,7 @@ class BaseConfig(BaseSettings):
 
     POSTGRESQL_DATABASE_URL: str = Field(..., json_schema_extra={'env': 'POSTGRESQL_DATABASE_URL'})
 
+    AI_SERVICE_API_URL: str = Field(..., json_schema_extra={'env': 'AI_SERVICE_API_URL'})
     BACKEND_API_URL: str = Field(..., json_schema_extra={'env': 'BACKEND_API_URL'})
     USE_MOCK_BACKEND_API_URL: bool = Field(False, json_schema_extra={'env': 'USE_MOCK_BACKEND_API'})
     MOCK_BACKEND_API_URL: str = Field(..., json_schema_extra={'env': 'MOCK_BACKEND_API'})
