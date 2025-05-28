@@ -63,7 +63,7 @@ class MatchingEngineRouter:
         try:
             self.logger.info(f"Received enhanced match request for voter {submission.citizen_id} in election {submission.election_id}")
 
-            # Process submission using enhanced matching engine
+            # Process submission using an enhanced matching engine
             results = await matching_engine.process_voter_submission(submission)
 
             self.logger.info(f"Generated {len(results.matches)} matches for voter {submission.citizen_id} using {results.processing_method}")
