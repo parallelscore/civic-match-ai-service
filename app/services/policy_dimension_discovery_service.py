@@ -109,7 +109,7 @@ class PolicyDimensionDiscoveryService:
         ]
 
         try:
-            response = await llm_service._call_llm(
+            response = await llm_service.call_llm(
                 messages,
                 max_tokens=2000,
                 temperature=matching_config.dimension_discovery_temperature
@@ -206,7 +206,7 @@ class PolicyDimensionDiscoveryService:
         ]
 
         try:
-            response = await llm_service._call_llm(
+            response = await llm_service.call_llm(
                 messages,
                 max_tokens=1500,
                 temperature=matching_config.dimension_discovery_temperature
