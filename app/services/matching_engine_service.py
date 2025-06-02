@@ -24,7 +24,8 @@ class MatchingEngineService:
 
     async def process_voter_submission(self, submission: VoterSubmissionSchema) -> MatchResultsResponseSchema:
         """
-        Process voter submission using the enhanced policy-based matching system
+        Process voter submission using the enhanced policy-based matching system.
+        Returns ALL matched candidates (not limited to top 3).
         """
 
         self.logger.debug(submission)
@@ -32,13 +33,27 @@ class MatchingEngineService:
         self.logger.info(f"Processing enhanced submission for voter {submission.citizen_id} in election {submission.election_id}")
 
         try:
-            # Step 1: Get candidates
+            # Step 1: Get all candidates (including incomplete ones)
             candidates = await candidate_service.get_candidates_for_election(submission.election_id)
             if not candidates:
+                self.logger.warning(f"No candidates found for election {submission.election_id}")
                 return self._create_no_candidates_response(submission)
 
-            # Step 2: Discover policy dimensions for this election
-            all_questions = self._extract_all_questions(submission, candidates)
+            # Separate eligible and ineligible candidates
+            eligible_candidates = []
+            ineligible_candidates = []
+
+            for candidate in candidates:
+                if candidate.is_eligible_for_matching():
+                    eligible_candidates.append(candidate)
+                else:
+                    ineligible_candidates.append(candidate)
+
+            self.logger.info(f"Found {len(candidates)} total candidates: "
+                             f"{len(eligible_candidates)} eligible, {len(ineligible_candidates)} ineligible")
+
+            # Step 2: Discover policy dimensions for this election (using eligible candidates only)
+            all_questions = self._extract_all_questions(submission, eligible_candidates)
             election_analysis = await policy_dimension_discovery_service.discover_election_policy_dimensions(
                 submission.election_id, all_questions
             )
@@ -48,19 +63,31 @@ class MatchingEngineService:
             # Step 3: Create voter policy profile
             voter_profile = await self._create_voter_policy_profile(submission, election_analysis)
 
-            # Step 4: Create candidate policy profiles
-            candidate_profiles = await self._create_candidate_policy_profiles(candidates, election_analysis)
-
-            # Step 5: Calculate matches
+            # Step 4: Process eligible candidates for matching
             enhanced_matches = []
-            for candidate_profile in candidate_profiles:
-                match_result = await enhanced_matching_calculator_service.calculate_enhanced_match(
-                    voter_profile, candidate_profile
-                )
-                enhanced_matches.append(self._convert_to_legacy_format(match_result))
 
-            # Step 6: Sort by match percentage
+            if eligible_candidates:
+                # Create candidate policy profiles for eligible candidates
+                candidate_profiles = await self._create_candidate_policy_profiles(eligible_candidates, election_analysis)
+
+                # Calculate matches for eligible candidates
+                for candidate_profile in candidate_profiles:
+                    match_result = await enhanced_matching_calculator_service.calculate_enhanced_match(
+                        voter_profile, candidate_profile
+                    )
+                    enhanced_matches.append(self._convert_to_legacy_format(match_result))
+
+            # Step 5: Add ineligible candidates with 0% match
+            for candidate in ineligible_candidates:
+                zero_match = self._create_zero_match_result(candidate)
+                enhanced_matches.append(zero_match)
+                self.logger.debug(f"Added 0% match for ineligible candidate {candidate.candidate_id}")
+
+            # Step 6: Sort by match percentage (highest first) but return ALL matches
             enhanced_matches.sort(key=lambda x: x.match_percentage, reverse=True)
+
+            self.logger.info(f"Generated {len(enhanced_matches)} total candidate matches "
+                             f"({len(eligible_candidates)} calculated, {len(ineligible_candidates)} set to 0%)")
 
             # Step 7: Generate voter values profile
             voter_values_profile = await self._generate_voter_values_profile(voter_profile, election_analysis)
@@ -74,7 +101,7 @@ class MatchingEngineService:
                 citizen_id=submission.citizen_id,
                 election_id=submission.election_id,
                 voter_values_profile=voter_values_profile,
-                matches=enhanced_matches,
+                matches=enhanced_matches,  # Return ALL matches, including 0% ones
                 generated_at=datetime.now(),
                 processing_method=processing_method,
                 confidence_score=confidence
@@ -170,7 +197,7 @@ class MatchingEngineService:
             overall_consistency_score=consistency_score
         )
 
-    async def _create_candidate_policy_profiles(self, candidates: List, election_analysis) -> List[PersonPolicyProfile]: #used
+    async def _create_candidate_policy_profiles(self, candidates: List, election_analysis) -> List[PersonPolicyProfile]:
         """Create policy profiles for all candidates"""
 
         candidate_profiles = []
@@ -246,7 +273,7 @@ class MatchingEngineService:
             overall_consistency_score=consistency_score
         )
 
-    def _convert_to_legacy_format(self, enhanced_result: EnhancedMatchResult): #used
+    def _convert_to_legacy_format(self, enhanced_result: EnhancedMatchResult):
         """Convert an enhanced match result to legacy format with LLM descriptions"""
 
         from app.schemas.voters_schema import CandidateMatchSchema, IssueMatchDetailSchema
@@ -280,7 +307,7 @@ class MatchingEngineService:
             self,
             voter_profile: PersonPolicyProfile,
             election_analysis
-    ) -> List[VoterValueProfileSchema]: #used
+    ) -> List[VoterValueProfileSchema]:
         """Generate voter values profile from policy positions using LLM"""
 
         values_profile = []
@@ -480,28 +507,42 @@ class MatchingEngineService:
         if not matches:
             return "no_matches", 0.0
 
+        # Separate calculated matches from 0% matches
+        calculated_matches = [m for m in matches if m.match_percentage > 0]
+        zero_matches = [m for m in matches if m.match_percentage == 0]
+
+        if not calculated_matches:
+            return "no_eligible_candidates", 0.0
+
         # Check if we have a good dimension discovery
         avg_dimension_confidence = sum(d.confidence for d in election_analysis.discovered_dimensions) / len(election_analysis.discovered_dimensions)
 
-        # Check match quality
-        high_quality_matches = sum(1 for m in matches if m.match_percentage >= 60)
-        has_detailed_explanations = any(m.overall_explanation for m in matches)
+        # Check match quality (only for calculated matches)
+        high_quality_matches = sum(1 for m in calculated_matches if m.match_percentage >= 60)
+        has_detailed_explanations = any(m.overall_explanation for m in calculated_matches)
 
         # Base confidence on dimension discovery quality
         base_confidence = avg_dimension_confidence
 
+        # Adjust confidence based on the proportion of ineligible candidates
+        total_candidates = len(matches)
+        eligible_ratio = len(calculated_matches) / total_candidates if total_candidates > 0 else 0
+
+        # Reduce confidence if many candidates are ineligible
+        confidence_adjustment = eligible_ratio * 0.1  # Up to 10% boost for all eligible
+
         if has_detailed_explanations and high_quality_matches >= 2:
-            return "policy_enhanced", min(0.95, base_confidence + 0.2)
+            return "policy_enhanced", min(0.95, base_confidence + 0.2 + confidence_adjustment)
         elif high_quality_matches >= 1:
-            return "policy_based", min(0.85, base_confidence + 0.1)
-        elif matches:
-            return "basic_policy", max(0.6, base_confidence)
+            return "policy_based", min(0.85, base_confidence + 0.1 + confidence_adjustment)
+        elif calculated_matches:
+            return "basic_policy", max(0.6, base_confidence + confidence_adjustment)
         else:
             return "fallback", 0.3
 
     @staticmethod
     def _create_no_candidates_response(submission: VoterSubmissionSchema) -> MatchResultsResponseSchema:
-        """Create response when no candidates found"""
+        """Create response when no eligible candidates found"""
 
         return MatchResultsResponseSchema(
             citizen_id=submission.citizen_id,
@@ -528,7 +569,23 @@ class MatchingEngineService:
             confidence_score=0.0
         )
 
-        # Utility methods
+    def _create_zero_match_result(self, candidate):
+        """Create a 0% match result for ineligible candidates."""
+        from app.schemas.voters_schema import CandidateMatchSchema, IssueMatchDetailSchema
+
+        # Create explanation for why the match is 0%
+        explanation = "This candidate has not completed their profile and/or questionnaire, so no policy comparison could be made."
+
+        return CandidateMatchSchema(
+            candidate_id=candidate.candidate_id,
+            match_percentage=0,
+            match_strength_visual=0.0,
+            top_aligned_issues=[],
+            issue_matches=[],
+            overall_explanation=explanation
+        )
+
+    # Utility methods
     @staticmethod
     def _get_alignment_level(score: float) -> str:
         """Convert score to alignment level"""
@@ -540,6 +597,7 @@ class MatchingEngineService:
             return "Somewhat Aligned"
         else:
             return "Weakly Aligned"
+
 
 # Create a service instance
 matching_engine = MatchingEngineService()
