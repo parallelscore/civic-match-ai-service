@@ -12,10 +12,14 @@ class CandidateResponseItemSchema(CamelModel):
 
 
 class CandidateResponseSchema(CamelModel):
-    """Schema for a candidate's responses with improved name handling."""
+    """Schema for a candidate's responses with completion status and improved name handling."""
     candidate_id: str
     election_id: str
     responses: List[CandidateResponseItemSchema]
+
+    # Completion status fields
+    has_completed_profile: Optional[bool] = None
+    has_completed_questionnaire: Optional[bool] = None
 
     # Optional fields that might be present in the data
     name: Optional[str] = None
@@ -36,3 +40,16 @@ class CandidateResponseSchema(CamelModel):
         if self.title:
             return self.title
         return "Candidate"
+
+    def is_eligible_for_matching(self) -> bool:
+        """
+        Check if candidate is eligible for matching based on completion status.
+
+        Returns:
+            bool: True if candidate has completed profile and questionnaire and has responses
+        """
+        return (
+                self.has_completed_profile is True and
+                self.has_completed_questionnaire is True and
+                len(self.responses) > 0
+        )
