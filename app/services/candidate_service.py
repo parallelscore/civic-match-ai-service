@@ -23,13 +23,15 @@ class CandidateService:
 
     async def get_candidates_for_election(self, election_id: str) -> List[CandidateResponseSchema]:
         """
-        Get all candidates and their responses for a specific election.
+        Get all candidates for a specific election.
+        Returns all candidates regardless of completion status - the matching engine
+        will handle incomplete candidates by giving them 0% match.
 
         Args:
             election_id: The ID of the election
 
         Returns:
-            List of candidates with their responses
+            List of all candidates with their responses
         """
         try:
             async with aiohttp.ClientSession() as session:
@@ -49,17 +51,48 @@ class CandidateService:
                     else:
                         candidates_data = data.get("data", [])
 
-                    self.logger.info(f"Processing {len(candidates_data)} candidates")
+                    self.logger.info(f"Retrieved {len(candidates_data)} candidate records")
 
+                    # Process all candidates (no filtering based on completion status)
                     candidates = []
+                    eligible_count = 0
+                    ineligible_count = 0
+
                     for candidate_data in candidates_data:
+                        # Check completion status for logging purposes
+                        has_completed_profile = candidate_data.get("hasCompletedProfile", False)
+                        has_completed_questionnaire = candidate_data.get("hasCompletedQuestionnaire", False)
+                        responses = candidate_data.get("responses", [])
+
+                        is_eligible = has_completed_profile and has_completed_questionnaire and len(responses) > 0
+
+                        if is_eligible:
+                            eligible_count += 1
+                            self.logger.debug(f"Candidate {candidate_data.get('candidateId', 'unknown')} is eligible for matching")
+                        else:
+                            ineligible_count += 1
+                            self.logger.debug(f"Candidate {candidate_data.get('candidateId', 'unknown')} will receive 0% match - "
+                                              f"Profile: {has_completed_profile}, Questionnaire: {has_completed_questionnaire}, "
+                                              f"Responses: {len(responses)}")
+
+                        # Process all candidates regardless of completion status
                         # Handle the candidate data structure from your ward8_election_data.json
-                        # The data uses 'candidateId' instead of 'candidate_id'
+                        # The data uses camelCase instead of snake_case for various fields
+
+                        # Convert candidateId to candidate_id
                         if 'candidateId' in candidate_data:
                             candidate_data['candidate_id'] = candidate_data.pop('candidateId')
 
+                        # Convert electionId to election_id
                         if 'electionId' in candidate_data:
                             candidate_data['election_id'] = candidate_data.pop('electionId')
+
+                        # Convert completion status fields from camelCase to snake_case
+                        if 'hasCompletedProfile' in candidate_data:
+                            candidate_data['has_completed_profile'] = candidate_data.pop('hasCompletedProfile')
+
+                        if 'hasCompletedQuestionnaire' in candidate_data:
+                            candidate_data['has_completed_questionnaire'] = candidate_data.pop('hasCompletedQuestionnaire')
 
                         # Handle responses that might use 'electionId' instead of 'election_id'
                         if 'responses' in candidate_data:
@@ -75,7 +108,8 @@ class CandidateService:
                             self.logger.debug(f"Problematic candidate data: {candidate_data}")
                             continue
 
-                    self.logger.info(f"Successfully processed {len(candidates)} candidates")
+                    self.logger.info(f"Successfully processed {len(candidates)} total candidates "
+                                     f"({eligible_count} eligible for matching, {ineligible_count} will receive 0% match)")
                     return candidates
 
         except Exception as e:
