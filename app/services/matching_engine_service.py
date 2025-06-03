@@ -11,7 +11,7 @@ from app.services.consistency_analyzer_service import consistency_analyzer_servi
 from app.services.policy_dimension_discovery_service import policy_dimension_discovery_service
 from app.services.enhanced_matching_calculator_service import enhanced_matching_calculator_service
 from app.schemas.policy_matching_schema import PersonPolicyProfile, PolicyPosition, EnhancedMatchResult
-from app.schemas.voters_schema import VoterSubmissionSchema, MatchResultsResponseSchema, VoterValueProfileSchema
+from app.schemas.voters_schema import VoterSubmissionSchema,MatchResultsResponseSchema, VoterValueProfileSchema
 
 
 class MatchingEngineService:
@@ -85,6 +85,9 @@ class MatchingEngineService:
 
             # Step 6: Sort by match percentage (highest first) but return ALL matches
             enhanced_matches.sort(key=lambda x: x.match_percentage, reverse=True)
+
+            # Step 6.1: Assign match categories (TOP, OTHER, UNMATCH)
+            self._assign_match_categories(enhanced_matches)
 
             self.logger.info(f"Generated {len(enhanced_matches)} total candidate matches "
                              f"({len(eligible_candidates)} calculated, {len(ineligible_candidates)} set to 0%)")
@@ -298,6 +301,7 @@ class MatchingEngineService:
             candidate_id=enhanced_result.candidate_id,
             match_percentage=enhanced_result.overall_match_percentage,
             match_strength_visual=enhanced_result.overall_match_percentage / 100.0,
+            match_category="PENDING",  # Will be assigned later in _assign_match_categories
             top_aligned_issues=top_aligned_issues,
             issue_matches=issue_matches,
             overall_explanation=enhanced_result.match_explanation
@@ -475,6 +479,40 @@ class MatchingEngineService:
             # Fallback to the basic description
             return self._create_fallback_voter_value_description(dimension, avg_position, positions, priority)
 
+    def _assign_match_categories(self, matches: List):
+        """
+        Assign match categories to candidates based on their match percentage and ranking.
+
+        Logic:
+        - Top 3 candidates with match_percentage > 0 get "TOP"
+        - Other candidates with match_percentage > 0 get "OTHER"
+        - Candidates with match_percentage = 0 get "UNMATCH" (already assigned)
+        """
+        # Separate matches with calculated scores from 0% matches
+        calculated_matches = [m for m in matches if m.match_percentage > 0]
+        zero_matches = [m for m in matches if m.match_percentage == 0]
+
+        # Assign TOP to first 3 calculated matches (highest percentages)
+        for i, match in enumerate(calculated_matches[:3]):
+            match.match_category = "TOP"
+            self.logger.debug(f"Assigned TOP to candidate {match.candidate_id} with {match.match_percentage}% match")
+
+        # Assign OTHER to remaining calculated matches
+        for match in calculated_matches[3:]:
+            match.match_category = "OTHER"
+            self.logger.debug(f"Assigned OTHER to candidate {match.candidate_id} with {match.match_percentage}% match")
+
+        # UNMATCH is already assigned to zero matches in _create_zero_match_result
+        for match in zero_matches:
+            self.logger.debug(f"Candidate {match.candidate_id} already assigned UNMATCH (0% match)")
+
+        # Log the categorization summary
+        top_count = len([m for m in matches if m.match_category == "TOP"])
+        other_count = len([m for m in matches if m.match_category == "OTHER"])
+        unmatch_count = len([m for m in matches if m.match_category == "UNMATCH"])
+
+        self.logger.info(f"Match categorization: {top_count} TOP, {other_count} OTHER, {unmatch_count} UNMATCH")
+
     @staticmethod
     def _create_fallback_voter_value_description(dimension, avg_position: float, positions: List[PolicyPosition], priority: str) -> str:
         """Fallback description when LLM fails"""
@@ -580,6 +618,7 @@ class MatchingEngineService:
             candidate_id=candidate.candidate_id,
             match_percentage=0,
             match_strength_visual=0.0,
+            match_category="UNMATCH",  # Assign UNMATCH category immediately for 0% matches
             top_aligned_issues=[],
             issue_matches=[],
             overall_explanation=explanation
