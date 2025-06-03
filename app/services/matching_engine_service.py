@@ -2,7 +2,6 @@
 
 from typing import List
 from datetime import datetime
-from typing import List
 
 from app.utils.logging_util import setup_logger
 from app.services.caching_service import cache_service
@@ -12,10 +11,7 @@ from app.services.consistency_analyzer_service import consistency_analyzer_servi
 from app.services.policy_dimension_discovery_service import policy_dimension_discovery_service
 from app.services.enhanced_matching_calculator_service import enhanced_matching_calculator_service
 from app.schemas.policy_matching_schema import PersonPolicyProfile, PolicyPosition, EnhancedMatchResult
-# Import from voters schema but don't import MatchCategory enum - use strings instead
-from app.schemas.voters_schema import (VoterSubmissionSchema,MatchResultsResponseSchema,
-    VoterValueProfileSchema,
-)
+from app.schemas.voters_schema import VoterSubmissionSchema,MatchResultsResponseSchema, VoterValueProfileSchema
 
 
 class MatchingEngineService:
@@ -305,6 +301,7 @@ class MatchingEngineService:
             candidate_id=enhanced_result.candidate_id,
             match_percentage=enhanced_result.overall_match_percentage,
             match_strength_visual=enhanced_result.overall_match_percentage / 100.0,
+            match_category="PENDING",  # Will be assigned later in _assign_match_categories
             top_aligned_issues=top_aligned_issues,
             issue_matches=issue_matches,
             overall_explanation=enhanced_result.match_explanation
@@ -621,6 +618,7 @@ class MatchingEngineService:
             candidate_id=candidate.candidate_id,
             match_percentage=0,
             match_strength_visual=0.0,
+            match_category="UNMATCH",  # Assign UNMATCH category immediately for 0% matches
             top_aligned_issues=[],
             issue_matches=[],
             overall_explanation=explanation
