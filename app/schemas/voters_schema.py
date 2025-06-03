@@ -1,3 +1,5 @@
+# app/schemas/voters_schema.py
+
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import List, Union, Dict, Any, Optional
@@ -44,6 +46,7 @@ class CandidateMatchSchema(BaseModel):
     candidate_id: str
     match_percentage: int  # 0-100
     match_strength_visual: float  # 0.0 to 1.0 for the progress bar
+    match_category: str  # will be "TOP", "OTHER", or "UNMATCH"
     top_aligned_issues: List[str]  # Simple list of issue names
     issue_matches: List[IssueMatchDetailSchema]
     overall_explanation: Optional[str] = None  # LLM-generated summary of the match
