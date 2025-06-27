@@ -63,7 +63,7 @@ jobs:
             AI_SERVICE_API_URL=${{ secrets.DEMO_AI_SERVICE_API_URL }}
 
       - name: Save image tag
-        run: echo "::set-output name=image-tag::${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}:dev"
+        run: echo "::set-output name=image-tag::${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}:demo"
 
 #  check-code-quality:
 #    runs-on: ubuntu-latest
@@ -120,7 +120,7 @@ jobs:
         with:
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}:dev
+            ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}:demo
           build-args: |
             POSTGRESQL_DATABASE_URL=${{ secrets.DEMO_POSTGRESQL_DATABASE_URL }}
             REDIS_DATABASE_URL=${{ secrets.DEMO_REDIS_DATABASE_URL }}
