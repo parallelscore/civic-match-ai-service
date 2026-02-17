@@ -127,7 +127,7 @@ jobs:
             CACHE_TTL_SECONDS=${{ secrets.DEV_CACHE_TTL_SECONDS }}
             BACKEND_API_URL=${{ secrets.DEV_BACKEND_API_URL }}
             USE_MOCK_BACKEND_API_URL=${{ secrets.USE_MOCK_BACKEND_API_URL }}
-            MOCK_BACKEND_API_URL=${{ secrets.MOCK_BACKEND_API_URL }}
+            MOCK_BACKEND_API_URL=${{ secrets.DEV_MOCK_BACKEND_API_URL }}
             OPENAI_API_KEY=${{ secrets.DEV_OPENAI_API_KEY }}
             LLM_PROVIDER=${{ secrets.DEV_LLM_PROVIDER }}
             LLM_MODEL=${{ secrets.DEV_LLM_MODEL }}
