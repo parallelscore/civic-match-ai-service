@@ -15,9 +15,12 @@ fastapi==0.115.12
 anthropic==0.52.0
 sqlalchemy==2.0.40
 pytest-mock==3.14.0
-scikit-learn==1.6.1
+# scikit-learn==1.6.1  # Removed in V2 — was only needed by sentence-transformers
 python-dotenv==1.1.0
 pytest-asyncio==1.0.0
 psycopg2-binary==2.9.10
 pydantic-settings==2.9.1
-sentence-transformers==4.1.0
+# sentence-transformers==4.1.0  # Removed in V2 — pulls in PyTorch (~3.5GB).
+# The LLM pipeline handles context-aware interpretation directly.
+# Re-enable here (and scikit-learn above) if embedding-based semantic
+# similarity is needed again in future.

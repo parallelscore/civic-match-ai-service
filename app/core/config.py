@@ -10,9 +10,9 @@ class BaseConfig(BaseSettings):
     PROJECT_NAME: str = Field('Civic Match Matching Engine', json_schema_extra={'env': 'PROJECT_NAME'})
     DESCRIPTION: str = Field('This is the backend service for Civic Match Matching Engine',
                              json_schema_extra={'env': 'DESCRIPTION'})
-    VERSION: str = Field('1.0.0', json_schema_extra={'env': 'VERSION'})
+    VERSION: str = Field('2.0.0', json_schema_extra={'env': 'VERSION'})
     CORS_ORIGINS: List[str] = Field(default=['*'], json_schema_extra={'env': 'CORS_ORIGINS'})
-    API_V1_STR: str = Field('/api/v1', json_schema_extra={'env': 'API_V1_STR'})
+    API_V1_STR: str = Field('/api/v2', json_schema_extra={'env': 'API_V1_STR'})
 
     POSTGRESQL_DATABASE_URL: str = Field(..., json_schema_extra={'env': 'POSTGRESQL_DATABASE_URL'})
 

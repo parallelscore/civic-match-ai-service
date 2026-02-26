@@ -20,16 +20,10 @@ async def app_lifespan(_apps: FastAPI):
     print("🚀 Starting CivicMatch Policy Matching Engine...")
     print(f"📋 Configuration loaded: {matching_config.max_policy_dimensions} max dimensions")
 
-    # Initialize semantic service (if enabled)
-    if settings.ENABLE_SEMANTIC_MATCHING:
-        try:
-            from app.services.semantic_matching_service import semantic_service
-            if semantic_service.model:
-                print(f"✅ Semantic matching enabled with model: {settings.EMBEDDING_MODEL}")
-            else:
-                print("⚠️  Semantic matching disabled - model failed to load")
-        except Exception as e:
-            print(f"❌ Semantic service initialization failed: {e}")
+    # Semantic matching is disabled in V2 — sentence-transformers/PyTorch
+    # removed from requirements to reduce image size from ~7.8GB to ~800MB.
+    # The LLM pipeline handles context-aware interpretation directly.
+    print("ℹ️  Semantic matching: disabled in V2 (LLM handles context-aware matching)")
 
     # Check LLM service
     if settings.ENABLE_LLM_MATCHING:
@@ -61,7 +55,7 @@ async def app_lifespan(_apps: FastAPI):
 
     print("🎯 Enhanced policy matching engine ready!")
     print(f"📡 API Documentation: {settings.AI_SERVICE_API_URL}/docs")
-    print(f"📊 Health Check: {settings.AI_SERVICE_API_URL}/api/v1/matching_engine/health")
+    print(f"📊 Health Check: {settings.AI_SERVICE_API_URL}/api/v2/matching_engine/health")
     print(f"⚙️  Max Policy Dimensions: {matching_config.max_policy_dimensions}")
     print(f"🔧 Consistency Analysis: {'Enabled' if matching_config.enable_consistency_analysis else 'Disabled'}")
 

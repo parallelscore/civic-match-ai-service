@@ -87,7 +87,6 @@ class MatchingEngineRouter:
         """
         try:
             from app.services.caching_service import cache_service
-            from app.services.semantic_matching_service import semantic_service
             from app.services.llm_service import llm_service
             from app.core.config import settings
 
@@ -96,9 +95,8 @@ class MatchingEngineRouter:
                 "timestamp": str(datetime.now()),
                 "services": {
                     "semantic_matching": {
-                        "enabled": settings.ENABLE_SEMANTIC_MATCHING,
-                        "model_loaded": semantic_service.model is not None,
-                        "model_name": settings.EMBEDDING_MODEL
+                        "enabled": False,
+                        "note": "Disabled in V2 — LLM handles context-aware matching directly"
                     },
                     "llm_matching": {
                         "enabled": settings.ENABLE_LLM_MATCHING,
@@ -112,7 +110,6 @@ class MatchingEngineRouter:
                     }
                 },
                 "configuration": {
-                    "embedding_threshold": settings.EMBEDDING_SIMILARITY_THRESHOLD,
                     "cache_ttl": settings.CACHE_TTL_SECONDS,
                     "llm_timeout": settings.LLM_TIMEOUT_SECONDS
                 }
@@ -180,22 +177,12 @@ class MatchingEngineRouter:
                 voter_questions = list(voter_responses.keys())
                 candidate_questions = list(candidate_responses.keys())
 
-                # Get semantic similarities
-                from app.services.semantic_matching_service import semantic_service
-                batch_results = semantic_service.batch_find_similar_questions(
-                    voter_questions, candidate_questions
+                # Semantic matching disabled in V2 — no sentence-transformers
+                candidate_info["semantic_matches"] = []
+                candidate_info["semantic_matching_note"] = (
+                    "Semantic matching disabled in V2. "
+                    "LLM handles context-aware interpretation directly."
                 )
-
-                for voter_q, similarities in batch_results.items():
-                    if similarities:
-                        best_match = similarities[0]
-                        candidate_info["semantic_matches"].append({
-                            "voter_question": voter_q,
-                            "candidate_question": best_match.candidate_question,
-                            "similarity_score": best_match.similarity_score,
-                            "voter_answer": voter_responses[voter_q].answer,
-                            "candidate_answer": candidate_responses[best_match.candidate_question].answer
-                        })
 
                 debug_info["candidates"].append(candidate_info)
 
