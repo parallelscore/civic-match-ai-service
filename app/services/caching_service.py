@@ -138,8 +138,9 @@ class CacheService:
 
     async def cache_election_topics(self, election_id: str, topics: List[Dict]) -> bool:
         """Cache discovered topics for an election."""
+        from app.core.matching_config import matching_config
         key = self._generate_cache_key("election_topics", election_id)
-        return await self.set(key, topics, ttl_seconds=86400)  # 24 hours
+        return await self.set(key, topics, ttl_seconds=matching_config.dimension_cache_ttl)
 
     async def get_election_topics(self, election_id: str) -> Optional[List[Dict]]:
         """Get cached topics for an election."""
@@ -149,12 +150,13 @@ class CacheService:
     async def cache_question_similarities(self, voter_question: str, candidate_questions: List[str],
                                           similarities: List[Dict]) -> bool:
         """Cache question similarity results."""
+        from app.core.matching_config import matching_config
         cache_data = {
             "voter_question": voter_question,
             "candidate_questions": candidate_questions
         }
         key = self._generate_cache_key("question_similarities", cache_data)
-        return await self.set(key, similarities, ttl_seconds=3600)  # 1 hour
+        return await self.set(key, similarities, ttl_seconds=matching_config.position_cache_ttl)
 
     async def get_question_similarities(self, voter_question: str,
                                         candidate_questions: List[str]) -> Optional[List[Dict]]:
@@ -169,13 +171,14 @@ class CacheService:
     async def cache_position_alignment(self, voter_answer: str, candidate_answer: str,
                                        question: str, alignment_data: Dict) -> bool:
         """Cache position alignment analysis."""
+        from app.core.matching_config import matching_config
         cache_data = {
             "voter_answer": voter_answer,
             "candidate_answer": candidate_answer,
             "question": question
         }
         key = self._generate_cache_key("position_alignment", cache_data)
-        return await self.set(key, alignment_data, ttl_seconds=3600)  # 1 hour
+        return await self.set(key, alignment_data, ttl_seconds=matching_config.position_cache_ttl)
 
     async def get_position_alignment(self, voter_answer: str, candidate_answer: str,
                                      question: str) -> Optional[Dict]:
@@ -190,8 +193,9 @@ class CacheService:
 
     async def cache_voter_profile(self, voter_responses: List[Dict], profile: List[Dict]) -> bool:
         """Cache voter profile analysis."""
+        from app.core.matching_config import matching_config
         key = self._generate_cache_key("voter_profile", voter_responses)
-        return await self.set(key, profile, ttl_seconds=3600)  # 1 hour
+        return await self.set(key, profile, ttl_seconds=matching_config.position_cache_ttl)
 
     async def get_voter_profile(self, voter_responses: List[Dict]) -> Optional[List[Dict]]:
         """Get cached voter profile analysis."""
@@ -257,12 +261,15 @@ class CacheService:
 
     async def cache_consistency_analysis(self, person_id: str, tensions: List[Dict], consistency_score: float) -> bool:
         """Cache consistency analysis results"""
+        from app.core.matching_config import matching_config
         key = self._generate_cache_key("consistency_analysis", person_id)
         data = {
             "tensions": tensions,
             "consistency_score": consistency_score
         }
-        return await self.set(key, data, ttl_seconds=1800)  # 30 minutes
+        # Use half the position cache TTL — consistency scores are derived data
+        # and should refresh more frequently than raw position inferences.
+        return await self.set(key, data, ttl_seconds=matching_config.position_cache_ttl // 2)
 
     async def get_consistency_analysis(self, person_id: str) -> Optional[Dict]:
         """Get cached consistency analysis"""

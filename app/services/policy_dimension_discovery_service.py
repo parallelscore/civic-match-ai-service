@@ -67,7 +67,8 @@ class PolicyDimensionDiscoveryService:
         """
 
         # Prepare questions for analysis (limit to avoid token limits)
-        questions_sample = all_questions[:30] if len(all_questions) > 30 else all_questions
+        sample_limit = matching_config.dimension_discovery_question_sample
+        questions_sample = all_questions[:sample_limit] if len(all_questions) > sample_limit else all_questions
         questions_text = "\n".join([f"{i+1}. {q}" for i, q in enumerate(questions_sample)])
 
         prompt = f"""
@@ -111,15 +112,30 @@ class PolicyDimensionDiscoveryService:
         try:
             response = await llm_service.call_llm(
                 messages,
-                max_tokens=2000,
-                temperature=matching_config.dimension_discovery_temperature
+                max_tokens=matching_config.llm_max_tokens_dimension_discovery,
+                temperature=matching_config.dimension_discovery_temperature,
             )
 
             dimensions_data = llm_service._extract_json_from_response(response)
 
-            if not dimensions_data or len(dimensions_data) != matching_config.max_policy_dimensions:
-                self.logger.warning(f"LLM returned {len(dimensions_data) if dimensions_data else 0} dimensions, expected {matching_config.max_policy_dimensions}")
+            # Accept anything between the minimum sensible count (3) and the
+            # configured maximum.  Requiring an exact count was too brittle —
+            # the LLM might return 5 instead of 6 and that is still useful.
+            min_acceptable = 3
+            received = len(dimensions_data) if dimensions_data else 0
+            if not dimensions_data or received < min_acceptable:
+                self.logger.warning(
+                    f"LLM returned {received} dimensions — below minimum of "
+                    f"{min_acceptable}. Falling back to keyword-derived dimensions."
+                )
                 return await self._create_fallback_dimensions(all_questions)
+
+            if received > matching_config.max_policy_dimensions:
+                self.logger.info(
+                    f"LLM returned {received} dimensions — trimming to "
+                    f"configured maximum of {matching_config.max_policy_dimensions}."
+                )
+                dimensions_data = dimensions_data[:matching_config.max_policy_dimensions]
 
             dimensions = []
             for dim_data in dimensions_data:
@@ -148,7 +164,7 @@ class PolicyDimensionDiscoveryService:
         ])
 
         # Process questions in batches to avoid token limits
-        batch_size = 10
+        batch_size = matching_config.dimension_mapping_batch_size
         for i in range(0, len(all_questions), batch_size):
             batch = all_questions[i:i+batch_size]
             batch_mappings = await self._map_question_batch(batch, dimension_info, dimensions)
@@ -208,8 +224,8 @@ class PolicyDimensionDiscoveryService:
         try:
             response = await llm_service.call_llm(
                 messages,
-                max_tokens=1500,
-                temperature=matching_config.dimension_discovery_temperature
+                max_tokens=matching_config.llm_max_tokens_question_mapping,
+                temperature=matching_config.dimension_discovery_temperature,
             )
 
             mappings_data = llm_service._extract_json_from_response(response)
@@ -278,45 +294,101 @@ class PolicyDimensionDiscoveryService:
 
     async def _create_fallback_dimensions(self, questions: List[str]) -> List[PolicyDimension]:
         """
-        Create fallback dimensions when LLM discovery fails
-        """
+        Create fallback dimensions when LLM discovery fails.
 
-        fallback_dimensions = [
-            PolicyDimension(
-                dimension_id="education_policy",
-                name="Education Policy",
-                description="Policies related to education funding, access, and quality",
-                policy_spectrum_description="Low Support (0) to High Support (100)",
-                keywords=["education", "school", "student", "teacher", "learning"],
-                confidence=0.6
-            ),
-            PolicyDimension(
-                dimension_id="student_support",
-                name="Student Support Services",
-                description="Mental health, counseling, and support services for students",
-                policy_spectrum_description="Minimal Support (0) to Comprehensive Support (100)",
-                keywords=["mental health", "counseling", "support", "services", "wellbeing"],
-                confidence=0.6
-            ),
-            PolicyDimension(
-                dimension_id="school_safety",
-                name="School Safety",
-                description="Approaches to ensuring safety and security in schools",
-                policy_spectrum_description="Minimal Intervention (0) to High Intervention (100)",
-                keywords=["safety", "security", "sro", "police", "violence"],
-                confidence=0.6
-            ),
-            PolicyDimension(
-                dimension_id="government_role",
-                name="Government Role",
-                description="The extent of government involvement in education policy",
-                policy_spectrum_description="Limited Role (0) to Active Role (100)",
-                keywords=["government", "council", "legislation", "policy", "advocacy"],
-                confidence=0.6
-            )
+        V2: dimensions are derived from the actual questions using keyword
+        frequency analysis — fully generic, works for any election domain.
+        We build one dimension per broad policy cluster found in the text.
+        """
+        # Broad policy clusters — keywords that signal a topic area
+        policy_clusters = [
+            {
+                "dimension_id": "spending_and_funding",
+                "name": "Spending & Funding",
+                "description": "Policies about public spending, budgets, and how programmes are funded",
+                "policy_spectrum_description": "Reduce Spending (0) to Increase Spending (100)",
+                "keywords": ["fund", "budget", "spend", "invest", "cost", "resource", "finance"],
+            },
+            {
+                "dimension_id": "public_services",
+                "name": "Public Services",
+                "description": "The level and quality of services provided to the public",
+                "policy_spectrum_description": "Minimal Services (0) to Expanded Services (100)",
+                "keywords": ["service", "program", "support", "access", "provide", "benefit"],
+            },
+            {
+                "dimension_id": "government_role",
+                "name": "Government Role",
+                "description": "How much government should be involved in regulating and deciding policy",
+                "policy_spectrum_description": "Limited Government (0) to Active Government (100)",
+                "keywords": ["government", "regulation", "policy", "mandate", "legislation", "law"],
+            },
+            {
+                "dimension_id": "community_and_local",
+                "name": "Community & Local Control",
+                "description": "The extent to which local communities control decisions that affect them",
+                "policy_spectrum_description": "Centralised Control (0) to Local Autonomy (100)",
+                "keywords": ["community", "local", "district", "neighbourhood", "resident", "autonomy"],
+            },
+            {
+                "dimension_id": "safety_and_security",
+                "name": "Safety & Security",
+                "description": "Approaches to public safety, law enforcement, and security measures",
+                "policy_spectrum_description": "Minimal Intervention (0) to High Intervention (100)",
+                "keywords": ["safety", "security", "police", "enforcement", "protection", "crime"],
+            },
+            {
+                "dimension_id": "equity_and_inclusion",
+                "name": "Equity & Inclusion",
+                "description": "Policies that promote equal access and inclusion for all groups",
+                "policy_spectrum_description": "Status Quo (0) to Full Equity Focus (100)",
+                "keywords": ["equity", "equal", "inclusion", "diversity", "access", "fair", "opportunity"],
+            },
         ]
 
-        return fallback_dimensions[:matching_config.max_policy_dimensions]
+        # Score each cluster by how many of its keywords appear in the questions
+        questions_text = " ".join(questions).lower()
+        scored = []
+        for cluster in policy_clusters:
+            score = sum(1 for kw in cluster["keywords"] if kw in questions_text)
+            scored.append((score, cluster))
+
+        # Sort by relevance — most relevant clusters first
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        # Build PolicyDimension objects for the top N clusters
+        n = matching_config.max_policy_dimensions
+        fallback_dimensions = []
+        for _, cluster in scored[:n]:
+            fallback_dimensions.append(
+                PolicyDimension(
+                    dimension_id=cluster["dimension_id"],
+                    name=cluster["name"],
+                    description=cluster["description"],
+                    policy_spectrum_description=cluster["policy_spectrum_description"],
+                    keywords=cluster["keywords"],
+                    confidence=0.5,  # Lower confidence to signal these are fallbacks
+                )
+            )
+
+        # Guarantee we always return at least one dimension
+        if not fallback_dimensions:
+            fallback_dimensions.append(
+                PolicyDimension(
+                    dimension_id="general_policy",
+                    name="General Policy",
+                    description="Overall policy position inferred from questionnaire responses",
+                    policy_spectrum_description="Conservative Approach (0) to Progressive Approach (100)",
+                    keywords=["policy", "support", "change", "reform", "improve"],
+                    confidence=0.4,
+                )
+            )
+
+        self.logger.warning(
+            f"Using keyword-derived fallback dimensions: "
+            f"{[d.dimension_id for d in fallback_dimensions]}"
+        )
+        return fallback_dimensions
 
     def _create_fallback_mappings(
             self,

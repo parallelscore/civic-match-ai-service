@@ -43,6 +43,12 @@ class BaseConfig(BaseSettings):
     LLM_RETRY_ATTEMPTS: int = Field(default=3, json_schema_extra={'env': 'LLM_RETRY_ATTEMPTS'})
     LLM_TIMEOUT_SECONDS: int = Field(default=30, json_schema_extra={'env': 'LLM_TIMEOUT_SECONDS'})
 
+    # Debug Configuration
+    # When True, the /matching_engine/debug endpoint is registered and accessible.
+    # Must be False (default) in production to prevent exposing internal details.
+    # Set DEBUG_MODE=true in your .env file to enable during development.
+    DEBUG_MODE: bool = Field(default=False, json_schema_extra={'env': 'DEBUG_MODE'})
+
     model_config: ClassVar[ConfigDict] = ConfigDict(
         arbitrary_types_allowed=True,
         # Treat empty strings as missing/unset, allowing defaults to be used
@@ -152,6 +158,18 @@ class BaseConfig(BaseSettings):
         """Handle empty string for ENABLE_SEMANTIC_MATCHING"""
         if v == '' or v is None:
             return True
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v.lower() in ('true', '1', 'yes', 'on')
+        return bool(v)
+
+    @field_validator('DEBUG_MODE', mode='before')
+    @classmethod
+    def validate_debug_mode(cls, v):
+        """Handle empty string for DEBUG_MODE"""
+        if v == '' or v is None:
+            return False
         if isinstance(v, bool):
             return v
         if isinstance(v, str):

@@ -108,8 +108,9 @@ class LLMService:
         """
         self.logger.info(f"Discovering topics for {len(all_questions)} questions")
 
-        # Limit to first 20 questions to avoid token limits
-        questions_subset = all_questions[:20]
+        # Limit questions to avoid token limits — configurable via matching_config
+        from app.core.matching_config import matching_config
+        questions_subset = all_questions[:matching_config.dimension_discovery_question_sample]
         questions_text = "\n".join([f"{i+1}. {q}" for i, q in enumerate(questions_subset)])
 
         prompt = f"""
@@ -184,8 +185,9 @@ class LLMService:
         if not candidate_questions:
             return []
 
-        # Limit candidate questions to avoid token limits
-        candidate_questions_subset = candidate_questions[:15]
+        # Limit candidate questions to avoid token limits — configurable via matching_config
+        from app.core.matching_config import matching_config
+        candidate_questions_subset = candidate_questions[:matching_config.dimension_mapping_batch_size * 2]
         candidate_questions_text = "\n".join([f"{i+1}. {q}" for i, q in enumerate(candidate_questions_subset)])
 
         prompt = f"""
@@ -283,7 +285,11 @@ class LLMService:
         """
         Generate a voter's political values profile based on their responses.
         """
-        responses_text = "\n".join([f"- {r['question']}: {r['answer']}" for r in voter_responses[:8]])  # Limit responses
+        from app.core.matching_config import matching_config
+        responses_text = "\n".join([
+            f"- {r['question']}: {r['answer']}"
+            for r in voter_responses[:matching_config.llm_voter_profile_response_limit]
+        ])
 
         prompt = f"""
         Create a political values profile from these responses:

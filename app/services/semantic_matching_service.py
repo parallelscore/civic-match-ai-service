@@ -22,7 +22,13 @@ class SemanticMatchingService:
             self.model = SentenceTransformer(settings.EMBEDDING_MODEL)
             self.logger.info(f"Loaded embedding model: {settings.EMBEDDING_MODEL}")
         except Exception as e:
-            self.logger.error(f"Failed to load embedding model: {str(e)}")
+            self.logger.error(
+                f"Failed to load embedding model '{settings.EMBEDDING_MODEL}': {str(e)}. "
+                f"Semantic matching will be DISABLED. All calls to find_similar_questions() "
+                f"and batch_find_similar_questions() will return empty results until the "
+                f"model is available. Check that the model name is correct and that "
+                f"sentence-transformers is installed."
+            )
             self.model = None
 
     def encode_questions(self, questions: List[str]) -> Optional[np.ndarray]:
@@ -43,7 +49,13 @@ class SemanticMatchingService:
         """
         Find semantically similar questions using embeddings.
         """
-        if not self.model or not candidate_questions:
+        if not self.model:
+            self.logger.warning(
+                "find_similar_questions() called but embedding model is not loaded. "
+                "Returning empty results. Semantic similarity is disabled."
+            )
+            return []
+        if not candidate_questions:
             return []
 
         threshold = threshold or settings.EMBEDDING_SIMILARITY_THRESHOLD
@@ -91,7 +103,13 @@ class SemanticMatchingService:
         """
         Find similar questions for multiple voter questions efficiently.
         """
-        if not self.model or not voter_questions or not candidate_questions:
+        if not self.model:
+            self.logger.warning(
+                "batch_find_similar_questions() called but embedding model is not loaded. "
+                "Returning empty results. Semantic similarity is disabled."
+            )
+            return {}
+        if not voter_questions or not candidate_questions:
             return {}
 
         threshold = threshold or settings.EMBEDDING_SIMILARITY_THRESHOLD

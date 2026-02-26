@@ -1,4 +1,5 @@
 # app/services/enhanced_matching_calculator_service.py
+import hashlib
 from typing import List
 from app.schemas.policy_matching_schema import (
     PolicyPosition, DimensionMatch, EnhancedMatchResult,
@@ -31,6 +32,28 @@ class EnhancedMatchingCalculatorService:
             voter_profile.policy_positions,
             candidate_profile.policy_positions
         )
+
+        # Step 1a: Minimum overlap guard — if voter and candidate share too few
+        # comparable dimensions, a score would be misleading. Return 0% instead.
+        if len(dimension_matches) < matching_config.min_dimension_overlap:
+            self.logger.info(
+                f"Candidate {candidate_profile.person_id} has only "
+                f"{len(dimension_matches)} overlapping dimension(s) "
+                f"(minimum {matching_config.min_dimension_overlap}) — returning 0%"
+            )
+            return EnhancedMatchResult(
+                voter_id=voter_profile.person_id,
+                candidate_id=candidate_profile.person_id,
+                overall_match_percentage=0,
+                confidence_weighted_percentage=0,
+                dimension_matches=dimension_matches,
+                consistency_penalty_applied=0.0,
+                match_explanation=(
+                    "Not enough comparable policy positions found between your "
+                    "responses and this candidate to calculate a meaningful match."
+                ),
+                top_aligned_dimensions=[],
+            )
 
         # Step 2: Calculate base match percentage
         base_match_percentage = self._calculate_base_match_percentage(dimension_matches)
@@ -85,9 +108,30 @@ class EnhancedMatchingCalculatorService:
         Calculate match for each policy dimension with LLM-generated descriptions
         """
 
-        # Create lookup dictionaries
-        voter_lookup = {pos.dimension_id: pos for pos in voter_positions}
-        candidate_lookup = {pos.dimension_id: pos for pos in candidate_positions}
+        # Create lookup dictionaries — filter out positions below the minimum
+        # confidence threshold so that very uncertain inferences never feed
+        # into the final match score.
+        voter_lookup = {
+            pos.dimension_id: pos
+            for pos in voter_positions
+            if pos.confidence >= matching_config.min_confidence_threshold
+        }
+        candidate_lookup = {
+            pos.dimension_id: pos
+            for pos in candidate_positions
+            if pos.confidence >= matching_config.min_confidence_threshold
+        }
+
+        if len(voter_positions) != len(voter_lookup):
+            self.logger.debug(
+                f"Filtered out {len(voter_positions) - len(voter_lookup)} low-confidence "
+                f"voter positions (threshold={matching_config.min_confidence_threshold})"
+            )
+        if len(candidate_positions) != len(candidate_lookup):
+            self.logger.debug(
+                f"Filtered out {len(candidate_positions) - len(candidate_lookup)} low-confidence "
+                f"candidate positions (threshold={matching_config.min_confidence_threshold})"
+            )
 
         dimension_matches = []
 
@@ -150,9 +194,10 @@ class EnhancedMatchingCalculatorService:
         intensity_weight = (voter_pos.intensity_multiplier + 1.0) / 3.0  # Normalize to 0.33-1.0
         weighted_similarity = base_similarity * intensity_weight
 
-        # Boost for high agreement areas
-        if base_similarity > 0.8:
-            weighted_similarity = min(1.0, weighted_similarity * 1.1)
+        # Boost for high agreement areas (configurable threshold and factor)
+        distance = abs(voter_pos.position_score - candidate_pos.position_score)
+        if distance < matching_config.high_agreement_distance_threshold:
+            weighted_similarity = min(1.0, weighted_similarity * matching_config.high_agreement_boost)
 
         self.logger.debug(f"Position alignment: distance={position_distance:.1f}, base_sim={base_similarity:.3f}, weighted_sim={weighted_similarity:.3f}")
 
@@ -298,69 +343,6 @@ class EnhancedMatchingCalculatorService:
 
         return explanation, voter_desc, candidate_desc
 
-    def _create_detailed_position_description(self, position: PolicyPosition) -> str:
-        """
-        Create detailed position description based on score and reasoning
-        """
-
-        score = position.position_score
-        reasoning = position.reasoning if position.reasoning and len(position.reasoning.strip()) > 5 else ""
-
-        # Base position strength
-        if score >= 85:
-            base_desc = "very strong support"
-        elif score >= 70:
-            base_desc = "strong support"
-        elif score >= 60:
-            base_desc = "moderate support"
-        elif score >= 40:
-            base_desc = "mixed views"
-        elif score >= 25:
-            base_desc = "moderate opposition"
-        else:
-            base_desc = "strong opposition"
-
-        # Add reasoning context if available
-        if reasoning:
-            # Extract key themes from reasoning
-            reasoning_lower = reasoning.lower()
-
-            # Education-related reasoning
-            if any(word in reasoning_lower for word in ["access", "opportunity", "program"]):
-                context = "focusing on access and opportunities"
-            elif any(word in reasoning_lower for word in ["funding", "resource", "budget"]):
-                context = "emphasizing funding and resources"
-            elif any(word in reasoning_lower for word in ["safety", "security", "protection"]):
-                context = "prioritizing safety and security"
-            elif any(word in reasoning_lower for word in ["mental health", "counseling", "support"]):
-                context = "emphasizing mental health and support services"
-            elif any(word in reasoning_lower for word in ["community", "local", "resident"]):
-                context = "focusing on community involvement"
-            elif any(word in reasoning_lower for word in ["quality", "improvement", "standard"]):
-                context = "emphasizing quality and standards"
-            else:
-                context = "with specific implementation preferences"
-
-            return f"{base_desc} {context}"
-
-        return base_desc
-
-    def _describe_position_strength(self, position_score: float) -> str:
-        """
-        Convert position score to descriptive text
-        """
-
-        if position_score >= 80:
-            return "Strong support"
-        elif position_score >= 65:
-            return "Moderate support"
-        elif position_score >= 35:
-            return "Mixed/neutral"
-        elif position_score >= 20:
-            return "Moderate opposition"
-        else:
-            return "Strong opposition"
-
     def _generate_match_explanation(
             self,
             dimension_matches: List[DimensionMatch],
@@ -433,8 +415,9 @@ class EnhancedMatchingCalculatorService:
         Use LLM to generate dynamic, human-like position descriptions
         """
 
-        # Check cache first
-        cache_key = f"position_desc:{position.dimension_id}:{position.position_score}:{hash(position.reasoning)}"
+        # Check cache first — use hashlib.md5 for cross-restart consistency
+        reasoning_hash = hashlib.md5((position.reasoning or "").encode()).hexdigest()
+        cache_key = f"position_desc:{position.dimension_id}:{position.position_score:.1f}:{reasoning_hash}"
         cached_desc = await cache_service.get(cache_key)
         if cached_desc:
             return cached_desc
@@ -477,8 +460,8 @@ class EnhancedMatchingCalculatorService:
 
             response = await llm_service.call_llm(
                 messages,
-                max_tokens=100,
-                temperature=0.3
+                max_tokens=matching_config.llm_max_tokens_position_description,
+                temperature=matching_config.llm_temperature_position_description,
             )
 
             # Clean up the response
@@ -492,7 +475,7 @@ class EnhancedMatchingCalculatorService:
                     description += '.'
 
             # Cache the result
-            await cache_service.set(cache_key, description, ttl_seconds=3600)
+            await cache_service.set(cache_key, description, ttl_seconds=matching_config.description_cache_ttl)
 
             return description
 

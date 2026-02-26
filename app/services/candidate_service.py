@@ -104,8 +104,18 @@ class CandidateService:
                             candidate = CandidateResponseSchema.model_validate(candidate_data)
                             candidates.append(candidate)
                         except Exception as validation_error:
-                            self.logger.error(f"Failed to validate candidate data: {validation_error}")
-                            self.logger.debug(f"Problematic candidate data: {candidate_data}")
+                            # Log prominently — a dropped candidate will be invisible
+                            # to the voter and could cause confusion on the frontend.
+                            candidate_id = candidate_data.get(
+                                "candidate_id",
+                                candidate_data.get("candidateId", "unknown")
+                            )
+                            self.logger.error(
+                                f"Candidate '{candidate_id}' failed schema validation and "
+                                f"will NOT appear in results (not even as UNMATCH). "
+                                f"Reason: {validation_error}. "
+                                f"Raw data keys: {list(candidate_data.keys())}"
+                            )
                             continue
 
                     self.logger.info(f"Successfully processed {len(candidates)} total candidates "

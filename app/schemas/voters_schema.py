@@ -14,6 +14,12 @@ class VoterResponseItemSchema(CamelModel):
     category_id: Optional[str] = None
     category_name: Optional[str] = None
     answer: Union[str, bool, List[str], Dict[str, Any]]
+    # Optional written comment — some questionnaire UIs allow voters to add
+    # a short explanation alongside their answer.  When present this is passed
+    # into the position inference pipeline for richer context.
+    # Defaults to empty string so existing payloads without this field are
+    # fully backward-compatible.
+    comment: Optional[str] = ""
 
 
 class VoterSubmissionSchema(CamelModel):

@@ -1,0 +1,265 @@
+================================================================================
+         VOTER-CANDIDATE MATCHING ENGINE — TEAM ANALYSIS REPORT
+         Prepared by: Engineering Review
+         Date: February 25, 2026
+================================================================================
+
+
+OVERVIEW
+--------
+This report covers a review of the AI-powered voter-candidate matching service.
+The goal of this system is to compare a voter's questionnaire responses with a
+candidate's responses and calculate how well their views align on key policy
+topics like education, healthcare, housing, taxation, and welfare.
+
+The system has some genuinely good ideas behind it, but it also has real problems
+that are causing incorrect behaviour — including the issue where a voter who only
+entered their name and age was still matched with candidates.
+
+
+================================================================================
+THE GOOD PARTS
+================================================================================
+
+1. SMART USE OF AI FOR UNDERSTANDING CONTEXT
+   The system uses a Large Language Model (AI) to try to understand the meaning
+   behind answers, not just match keywords. This is the right approach. For
+   example, if a voter says "I strongly believe every child deserves a fair
+   start," the AI can connect that to education policy even without a direct
+   checkbox answer. That intent is correct and worth keeping.
+
+2. POLICY DIMENSION DISCOVERY
+   Instead of hardcoding topics like "education" or "healthcare," the system
+   tries to discover what topics are covered in each election automatically.
+   This means the system could theoretically work for any election, not just
+   one type. Good architectural thinking.
+
+3. MULTI-LAYER MATCHING
+   The system does not just compare one answer to one answer. It builds a full
+   "policy profile" for the voter AND for each candidate, then compares those
+   profiles dimension by dimension. This is more sophisticated than a simple
+   point-scoring quiz, and it is the right direction.
+
+4. CACHING
+   Results from AI calls are stored temporarily so the same question does not
+   get sent to the AI 100 times. This saves cost and speeds up the system.
+   Good practical thinking.
+
+5. CANDIDATE ELIGIBILITY FILTERING
+   Candidates who have not completed their profile are given a 0% match and
+   marked as UNMATCH rather than being scored incorrectly. This is correct
+   behaviour and is already working well.
+
+6. RETRY LOGIC ON AI CALLS
+   If the AI service fails or times out, the system retries up to 3 times
+   before giving up. This adds reliability in production.
+
+
+================================================================================
+THE PROBLEMS
+================================================================================
+
+--- CRITICAL PROBLEM #1: NO CHECK ON VOTER RESPONSE QUALITY ---
+
+This is the root cause of the bug you already experienced.
+
+When a voter submits their responses, the system does not check whether those
+responses are actually useful for matching. It just processes whatever it receives.
+
+So if a voter submits:
+  - Name: "John"
+  - Age: "32"
+
+The system will still run through the entire matching pipeline, produce policy
+position scores, and return candidate match percentages. Those scores will be
+meaningless — but the system does not know that and does not warn anyone.
+
+There is no minimum requirement like:
+  - "You must answer at least X policy-related questions"
+  - "We need at least Y responses before we can calculate a match"
+  - "These answers do not contain enough information to compare with candidates"
+
+FIX NEEDED: Before running the matching pipeline, check that the voter has given
+enough meaningful responses on actual policy topics. If not, return a clear
+message saying the voter's answers are insufficient to generate a match.
+
+
+--- CRITICAL PROBLEM #2: MEANINGLESS ANSWERS GET TREATED AS POLICY POSITIONS ---
+
+When a voter writes a free-text answer that has no policy content (e.g. "John" or
+"32"), the system runs a basic word-count sentiment check. It looks for words like
+"good", "bad", "should", "must" in the text. If none are found, it assigns a
+score of 50 out of 100 — which represents a neutral position.
+
+The problem: 50/100 (neutral) is still a valid score. The system then compares
+that 50/100 against the candidate's actual policy positions and produces a match
+percentage. A name like "John" becomes a "neutral policy position" and feeds into
+the final result.
+
+FIX NEEDED: Text answers that contain no policy-relevant content should be
+flagged and excluded from scoring, not silently converted to a neutral score.
+
+
+--- PROBLEM #3: THE SYSTEM IS TOO COMPLEX FOR WHAT IT DOES ---
+
+The pipeline currently has 6 separate AI services that each make their own AI
+calls, in this order:
+
+  Step 1: Discover what topics exist in this election       → 1 AI call
+  Step 2: Map each question to a topic                      → multiple AI calls
+  Step 3: For every voter answer, infer a position score    → 1 AI call each
+  Step 4: For every candidate answer, infer a position score → 1 AI call each
+  Step 5: For every voter-candidate pair, calculate match   → multiple AI calls
+  Step 6: Generate written descriptions of voter values     → 1 AI call each
+
+For a typical election with 20 questions and 5 candidates, this could mean
+50–80 separate AI calls for a single voter submission. This is:
+  - Slow (each AI call takes time)
+  - Expensive (each AI call costs money)
+  - Fragile (more calls = more chances for failure)
+
+All of this could be done in 2–5 AI calls maximum using a smarter prompt design.
+
+FIX NEEDED: Consolidate the AI calls. One call to understand the election topics,
+one call per candidate to compare voter vs candidate responses holistically.
+
+
+--- PROBLEM #4: HARDCODED NUMBERS SCATTERED EVERYWHERE ---
+
+There are magic numbers buried throughout the code with no explanation and no
+central place to change them. Here is a list of the ones we found:
+
+  - Only the first 20 questions are sent to AI for topic discovery (llm_service.py line 111)
+  - Only the first 15 candidate questions are used for similarity checks (line 187)
+  - Only the first 8 voter responses are used for profile generation (line 285)
+  - Similarity threshold is fixed at 0.6 — below this, questions are ignored (line 198)
+  - A voter position must be more than 15 points away from neutral (50/100) to be
+    considered "meaningful" — otherwise it is excluded from the values profile
+    (matching_engine_service.py line 341)
+  - Secondary dimension weight defaults to 0.3 with no explanation (lines 178, 255)
+  - LLM blend ratio: basic answer counts 30%, AI refinement counts 70% (position_inference_service.py line 198)
+  - Confidence starts at 0.7 and gets adjusted by ±0.1, ±0.15, ±0.2 with no justification (lines 222–244)
+  - The top 3 candidates are always labelled "TOP" regardless of their actual scores (matching_engine_service.py line 495)
+  - Fallback policy topics are hardcoded to education-specific themes: "education_policy",
+    "student_support", "school_safety", "government_role" — these will be wrong for any
+    non-education election (policy_dimension_discovery_service.py lines 283–316)
+
+The risk: if you need to tune the system (e.g. lower the similarity threshold or
+change how many questions are analysed), you have to hunt through 6 different files
+to find and change these numbers. And changing one number may silently break
+another part of the system.
+
+FIX NEEDED: All tunable numbers should live in one central configuration file,
+with clear comments explaining what each one does and why it has that value.
+
+
+--- PROBLEM #5: FALLBACK TOPICS ARE EDUCATION-SPECIFIC ---
+
+When the AI fails to discover election topics (e.g. due to an API error), the system
+falls back to a hardcoded list of 4 topics:
+  - education_policy
+  - student_support
+  - school_safety
+  - government_role
+
+These are clearly written for a school board election. If your platform runs any
+other type of election — city council, national parliament, housing authority — the
+fallback topics will be completely wrong and the matching results will be nonsense,
+silently.
+
+FIX NEEDED: Either make the fallback topics generic (e.g. "policy_area_1") or derive
+them from the actual questions even without AI, using basic keyword extraction.
+
+
+--- PROBLEM #6: THE CONSISTENCY ANALYZER ONLY WORKS FOR ONE DOMAIN ---
+
+There is a service called the Consistency Analyzer that checks whether a voter's
+answers are logically consistent. For example: if you say you want more public
+services AND lower taxes, that is a tension worth flagging.
+
+The problem: the four tension rules currently in the code are all specific to one
+election type. They check for specific dimension IDs like "education_funding" and
+"tax_policy." If those exact dimension names do not appear in the current election,
+the consistency check does nothing — silently.
+
+FIX NEEDED: Tension rules should either be dynamically generated by the AI based on
+the actual dimensions discovered, or at minimum they should be configurable per
+election rather than hardcoded.
+
+
+--- PROBLEM #7: CACHE KEYS CAN SILENTLY PRODUCE WRONG RESULTS ---
+
+The system caches AI responses to avoid making the same call twice. But some cache
+keys are built using Python's built-in hash() function:
+
+  cache_key = f"voter_value_desc:{dimension_id}:{avg_position}:{priority}:{hash(...)}"
+
+Python's hash() is not guaranteed to produce the same value across different
+server restarts. So after a server restart, a cached result might never be found
+again, wasting money on repeat AI calls — or worse, two slightly different inputs
+could accidentally share a cache key and return the wrong result.
+
+FIX NEEDED: All cache keys should use a proper hash like MD5 or SHA256, which
+produces consistent results. (The position_inference_service already does this
+correctly — the same pattern should be used everywhere.)
+
+
+--- PROBLEM #8: THE DEBUG ENDPOINT HAS NO SECURITY ---
+
+There is an API endpoint at /debug-matching that returns detailed internal
+information about how the matching was calculated. This endpoint has no
+authentication. Anyone who knows the URL can query it.
+
+FIX NEEDED: Either remove this endpoint in production or protect it with
+authentication so only internal engineers can access it.
+
+
+================================================================================
+SUMMARY — WHAT WE SHOULD FIX AND IN WHAT ORDER
+================================================================================
+
+Priority 1 — Fix the voter quality gate (stops the name/age bug)
+  Add a check at the start of processing: if the voter has not answered enough
+  policy-related questions, reject the submission with a clear message rather
+  than producing a meaningless match result.
+
+Priority 2 — Stop treating non-policy text as a neutral policy position
+  Free-text answers that contain no policy-relevant content should be excluded
+  from scoring, not assigned a 50/100 neutral score.
+
+Priority 3 — Replace hardcoded education fallback topics with generic ones
+  The fallback should not assume we are in a school board election.
+
+Priority 4 — Centralise all magic numbers into one config file
+  Every tunable threshold, weight, and limit should be in matching_config.py
+  with a clear comment, not buried in service files.
+
+Priority 5 — Fix cache keys to use consistent hashing
+  Replace all uses of Python's hash() with hashlib.md5() for cache keys.
+
+Priority 6 — Reduce the number of AI calls
+  Redesign the pipeline to use 2–5 AI calls per voter submission instead of
+  50–80. This will make the system faster, cheaper, and more reliable.
+
+Priority 7 — Generalise the consistency analyzer
+  Make the tension rules work for any election type, not just the hardcoded ones.
+
+Priority 8 — Secure the debug endpoint
+  Add authentication or remove it from production builds.
+
+
+================================================================================
+CLOSING NOTE
+================================================================================
+
+The foundation of this system is sound. The idea of building policy profiles and
+comparing them semantically is the right approach. The issues are mostly about
+robustness and configurability — the system was not yet hardened against real-world
+edge cases like incomplete voter responses or non-education elections.
+
+None of these fixes require a full rewrite. They can be done incrementally,
+starting with the voter quality gate which will immediately fix the reported bug.
+
+================================================================================
+END OF REPORT
+================================================================================

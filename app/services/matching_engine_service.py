@@ -1,9 +1,11 @@
 # app/services/matching_engine_service.py
 
-from typing import List
+import hashlib
+from typing import List, Tuple
 from datetime import datetime
 
 from app.utils.logging_util import setup_logger
+from app.core.matching_config import matching_config
 from app.services.caching_service import cache_service
 from app.services.candidate_service import candidate_service
 from app.services.position_inference_service import position_inference_service
@@ -11,7 +13,7 @@ from app.services.consistency_analyzer_service import consistency_analyzer_servi
 from app.services.policy_dimension_discovery_service import policy_dimension_discovery_service
 from app.services.enhanced_matching_calculator_service import enhanced_matching_calculator_service
 from app.schemas.policy_matching_schema import PersonPolicyProfile, PolicyPosition, EnhancedMatchResult
-from app.schemas.voters_schema import VoterSubmissionSchema,MatchResultsResponseSchema, VoterValueProfileSchema
+from app.schemas.voters_schema import VoterSubmissionSchema, MatchResultsResponseSchema, VoterValueProfileSchema
 
 
 class MatchingEngineService:
@@ -26,77 +28,90 @@ class MatchingEngineService:
         """
         Process voter submission using the enhanced policy-based matching system.
         Returns ALL matched candidates (not limited to top 3).
+
+        Pipeline:
+          1. Validate voter has enough policy-relevant responses (quality gate)
+          2. Fetch candidates and separate eligible vs ineligible
+          3. Discover policy dimensions for this election
+          4. Build voter + candidate policy profiles
+          5. Score every eligible candidate
+          6. Assign TOP / OTHER / UNMATCH categories
+          7. Generate voter values profile
         """
-
-        self.logger.debug(submission)
-
-        self.logger.info(f"Processing enhanced submission for voter {submission.citizen_id} in election {submission.election_id}")
+        self.logger.info(
+            f"Processing submission for voter {submission.citizen_id} "
+            f"in election {submission.election_id}"
+        )
 
         try:
-            # Step 1: Get all candidates (including incomplete ones)
+            # ── Step 1: Voter quality gate ──────────────────────────────
+            quality_issue = self._check_voter_response_quality(submission)
+            if quality_issue:
+                self.logger.warning(
+                    f"Voter {submission.citizen_id} failed quality gate: {quality_issue}"
+                )
+                return self._create_insufficient_responses_response(submission, quality_issue)
+
+            # ── Step 2: Fetch & partition candidates ────────────────────
             candidates = await candidate_service.get_candidates_for_election(submission.election_id)
             if not candidates:
                 self.logger.warning(f"No candidates found for election {submission.election_id}")
                 return self._create_no_candidates_response(submission)
 
-            # Separate eligible and ineligible candidates
-            eligible_candidates = []
-            ineligible_candidates = []
+            eligible_candidates = [c for c in candidates if c.is_eligible_for_matching()]
+            ineligible_candidates = [c for c in candidates if not c.is_eligible_for_matching()]
 
-            for candidate in candidates:
-                if candidate.is_eligible_for_matching():
-                    eligible_candidates.append(candidate)
-                else:
-                    ineligible_candidates.append(candidate)
+            self.logger.info(
+                f"Candidates: {len(candidates)} total, "
+                f"{len(eligible_candidates)} eligible, {len(ineligible_candidates)} ineligible"
+            )
 
-            self.logger.info(f"Found {len(candidates)} total candidates: "
-                             f"{len(eligible_candidates)} eligible, {len(ineligible_candidates)} ineligible")
-
-            # Step 2: Discover policy dimensions for this election (using eligible candidates only)
+            # ── Step 3: Discover policy dimensions ──────────────────────
             all_questions = self._extract_all_questions(submission, eligible_candidates)
             election_analysis = await policy_dimension_discovery_service.discover_election_policy_dimensions(
                 submission.election_id, all_questions
             )
+            self.logger.info(
+                f"Discovered {len(election_analysis.discovered_dimensions)} policy dimensions"
+            )
 
-            self.logger.info(f"Discovered {len(election_analysis.discovered_dimensions)} policy dimensions")
-
-            # Step 3: Create voter policy profile
+            # ── Step 4: Build voter policy profile ──────────────────────
             voter_profile = await self._create_voter_policy_profile(submission, election_analysis)
 
-            # Step 4: Process eligible candidates for matching
+            # ── Step 5: Score eligible candidates ───────────────────────
             enhanced_matches = []
 
             if eligible_candidates:
-                # Create candidate policy profiles for eligible candidates
-                candidate_profiles = await self._create_candidate_policy_profiles(eligible_candidates, election_analysis)
-
-                # Calculate matches for eligible candidates
+                candidate_profiles = await self._create_candidate_policy_profiles(
+                    eligible_candidates, election_analysis
+                )
                 for candidate_profile in candidate_profiles:
                     match_result = await enhanced_matching_calculator_service.calculate_enhanced_match(
                         voter_profile, candidate_profile
                     )
-                    enhanced_matches.append(self._convert_to_legacy_format(match_result))
+                    enhanced_matches.append(self._convert_to_output_format(match_result))
 
-            # Step 5: Add ineligible candidates with 0% match
+            # Ineligible candidates always get 0 %
             for candidate in ineligible_candidates:
-                zero_match = self._create_zero_match_result(candidate)
-                enhanced_matches.append(zero_match)
-                self.logger.debug(f"Added 0% match for ineligible candidate {candidate.candidate_id}")
+                enhanced_matches.append(self._create_zero_match_result(candidate))
+                self.logger.debug(f"0% match assigned to ineligible candidate {candidate.candidate_id}")
 
-            # Step 6: Sort by match percentage (highest first) but return ALL matches
+            # ── Step 6: Sort and categorise ─────────────────────────────
             enhanced_matches.sort(key=lambda x: x.match_percentage, reverse=True)
-
-            # Step 6.1: Assign match categories (TOP, OTHER, UNMATCH)
             self._assign_match_categories(enhanced_matches)
 
-            self.logger.info(f"Generated {len(enhanced_matches)} total candidate matches "
-                             f"({len(eligible_candidates)} calculated, {len(ineligible_candidates)} set to 0%)")
+            self.logger.info(
+                f"Returning {len(enhanced_matches)} matches "
+                f"({len(eligible_candidates)} scored, {len(ineligible_candidates)} at 0%)"
+            )
 
-            # Step 7: Generate voter values profile
-            voter_values_profile = await self._generate_voter_values_profile(voter_profile, election_analysis)
-
-            # Step 8: Determine processing method and confidence
-            processing_method, confidence = self._determine_processing_quality(enhanced_matches, election_analysis)
+            # ── Step 7: Voter values profile & quality metadata ─────────
+            voter_values_profile = await self._generate_voter_values_profile(
+                voter_profile, election_analysis
+            )
+            processing_method, confidence = self._determine_processing_quality(
+                enhanced_matches, election_analysis
+            )
 
             self.logger.info(f"Processing method: {processing_method}, Confidence: {confidence:.2f}")
 
@@ -104,17 +119,83 @@ class MatchingEngineService:
                 citizen_id=submission.citizen_id,
                 election_id=submission.election_id,
                 voter_values_profile=voter_values_profile,
-                matches=enhanced_matches,  # Return ALL matches, including 0% ones
+                matches=enhanced_matches,
                 generated_at=datetime.now(),
                 processing_method=processing_method,
-                confidence_score=confidence
+                confidence_score=confidence,
             )
 
         except Exception as e:
-            self.logger.error(f"Enhanced matching failed: {str(e)}")
-
-            # Fallback to basic matching or error response
+            self.logger.error(f"Matching pipeline failed: {str(e)}")
             return self._create_error_response(submission, str(e))
+
+    @staticmethod
+    def _check_voter_response_quality(submission: VoterSubmissionSchema) -> str:
+        """
+        Quality gate: ensure the voter has provided enough policy-relevant content
+        before we run the (expensive) matching pipeline.
+
+        Returns an empty string if quality is acceptable, or a human-readable
+        reason string if the submission should be rejected.
+        """
+        # Personal-info keywords that indicate a response is NOT policy-related
+        personal_info_keywords = {
+            "name", "age", "gender", "email", "phone", "address",
+            "occupation", "city", "state", "zip", "dob", "birthday",
+            "first name", "last name", "full name", "date of birth",
+        }
+
+        policy_response_count = 0
+
+        for response in submission.responses:
+            question_lower = response.question.lower().strip()
+
+            # Skip questions that are clearly asking for personal information
+            if any(kw in question_lower for kw in personal_info_keywords):
+                continue
+
+            answer = response.answer
+
+            # Boolean answers on non-personal questions always count
+            if isinstance(answer, bool):
+                policy_response_count += 1
+                continue
+
+            # List / dict answers (multi-select) count directly
+            if isinstance(answer, (list, dict)):
+                policy_response_count += 1
+                continue
+
+            # Text answers: structured short answers (yes/no/agree etc.) always
+            # count because they carry clear directional intent.
+            # Free-text answers must meet the minimum length threshold.
+            if isinstance(answer, str):
+                stripped = answer.strip().lower()
+                structured_tokens = {
+                    "yes", "no", "true", "false",
+                    "agree", "disagree",
+                    "support", "oppose",
+                    "favor", "against",
+                    "strongly agree", "strongly disagree",
+                    "strongly support", "strongly oppose",
+                    "strongly favor", "strongly against",
+                    "neutral", "unsure", "maybe", "somewhat",
+                }
+                if stripped in structured_tokens:
+                    # Short structured answer — counts regardless of length
+                    policy_response_count += 1
+                elif len(stripped) >= matching_config.min_answer_length_for_text and not stripped.isdigit():
+                    # Free-text — must be long enough and not purely numeric
+                    policy_response_count += 1
+
+        if policy_response_count < matching_config.min_policy_responses:
+            return (
+                f"Only {policy_response_count} policy-relevant response(s) detected. "
+                f"At least {matching_config.min_policy_responses} are required to generate "
+                f"a meaningful match. Please answer more policy questions."
+            )
+
+        return ""  # Quality check passed
 
     @staticmethod
     def _extract_all_questions(submission: VoterSubmissionSchema, candidates: List) -> List[str]:
@@ -133,8 +214,7 @@ class MatchingEngineService:
 
         return list(all_questions)
 
-    @staticmethod
-    async def _create_voter_policy_profile(submission: VoterSubmissionSchema, election_analysis) -> PersonPolicyProfile:
+    async def _create_voter_policy_profile(self, submission: VoterSubmissionSchema, election_analysis) -> PersonPolicyProfile:
         """Create comprehensive policy profile for voter"""
 
         policy_positions = []
@@ -159,14 +239,18 @@ class MatchingEngineService:
 
                 if dimension:
                     # Infer position for primary dimension
+                    # Use comment if the voter provided one; empty string otherwise
+                    voter_comment = getattr(response, 'comment', '') or ''
                     position = await position_inference_service.infer_policy_position(
                         question=question,
                         answer=response.answer,
-                        comment="",  # Voters typically don't have comments
+                        comment=voter_comment,
                         dimension=dimension,
                         person_type="voter"
                     )
-                    policy_positions.append(position)
+                    # None means the answer was not policy-relevant — skip it
+                    if position is not None:
+                        policy_positions.append(position)
 
                     # Handle secondary dimensions if they exist
                     for sec_dim_id in mapping.secondary_dimension_ids:
@@ -175,19 +259,20 @@ class MatchingEngineService:
                             None
                         )
                         if sec_dimension:
-                            # Create weighted position for secondary dimension
-                            sec_weight = mapping.secondary_weights.get(sec_dim_id, 0.3)
+                            sec_weight = mapping.secondary_weights.get(
+                                sec_dim_id, matching_config.position_basic_weight
+                            )
                             sec_position = await position_inference_service.infer_policy_position(
                                 question=question,
                                 answer=response.answer,
-                                comment="",
+                                comment=voter_comment,
                                 dimension=sec_dimension,
                                 person_type="voter"
                             )
-                            # Adjust confidence and intensity for secondary mapping
-                            sec_position.confidence *= sec_weight
-                            sec_position.intensity_multiplier *= sec_weight
-                            policy_positions.append(sec_position)
+                            if sec_position is not None:
+                                sec_position.confidence *= sec_weight
+                                sec_position.intensity_multiplier *= sec_weight
+                                policy_positions.append(sec_position)
 
         # Analyze consistency
         tensions, consistency_score = consistency_analyzer_service.analyze_position_consistency(policy_positions)
@@ -211,8 +296,7 @@ class MatchingEngineService:
 
         return candidate_profiles
 
-    @staticmethod
-    async def _create_single_candidate_profile(candidate, election_analysis) -> PersonPolicyProfile:
+    async def _create_single_candidate_profile(self, candidate, election_analysis) -> PersonPolicyProfile:
         """Create a policy profile for a single candidate"""
 
         policy_positions = []
@@ -244,7 +328,8 @@ class MatchingEngineService:
                         dimension=dimension,
                         person_type="candidate"
                     )
-                    policy_positions.append(position)
+                    if position is not None:
+                        policy_positions.append(position)
 
                     # Handle secondary dimensions
                     for sec_dim_id in mapping.secondary_dimension_ids:
@@ -253,7 +338,9 @@ class MatchingEngineService:
                             None
                         )
                         if sec_dimension:
-                            sec_weight = mapping.secondary_weights.get(sec_dim_id, 0.3)
+                            sec_weight = mapping.secondary_weights.get(
+                                sec_dim_id, matching_config.position_basic_weight
+                            )
                             sec_position = await position_inference_service.infer_policy_position(
                                 question=question,
                                 answer=response.answer,
@@ -261,9 +348,10 @@ class MatchingEngineService:
                                 dimension=sec_dimension,
                                 person_type="candidate"
                             )
-                            sec_position.confidence *= sec_weight
-                            sec_position.intensity_multiplier *= sec_weight
-                            policy_positions.append(sec_position)
+                            if sec_position is not None:
+                                sec_position.confidence *= sec_weight
+                                sec_position.intensity_multiplier *= sec_weight
+                                policy_positions.append(sec_position)
 
         # Analyze consistency
         tensions, consistency_score = consistency_analyzer_service.analyze_position_consistency(policy_positions)
@@ -276,7 +364,7 @@ class MatchingEngineService:
             overall_consistency_score=consistency_score
         )
 
-    def _convert_to_legacy_format(self, enhanced_result: EnhancedMatchResult):
+    def _convert_to_output_format(self, enhanced_result: EnhancedMatchResult):
         """Convert an enhanced match result to legacy format with LLM descriptions"""
 
         from app.schemas.voters_schema import CandidateMatchSchema, IssueMatchDetailSchema
@@ -339,7 +427,7 @@ class MatchingEngineService:
             avg_intensity = sum(p.intensity_multiplier for p in positions) / len(positions)
 
             # Only include if voter has meaningful position (not neutral)
-            if abs(avg_position - 50) > 15:  # More than 15 points from neutral
+            if abs(avg_position - 50) > matching_config.voter_profile_neutrality_threshold:
 
                 # Determine priority level based on intensity and position strength
                 if avg_intensity >= 1.5 and abs(avg_position - 50) > 25:
@@ -365,7 +453,7 @@ class MatchingEngineService:
         priority_order = {"High": 3, "Medium": 2, "Low": 1}
         values_profile.sort(key=lambda x: priority_order[x.priority_level], reverse=True)
 
-        return values_profile[:6]
+        return values_profile[:matching_config.voter_profile_max_items]
 
     async def _generate_llm_voter_value_description(
             self,
@@ -378,8 +466,10 @@ class MatchingEngineService:
         Use LLM to generate natural, personalized voter value descriptions
         """
 
-        # Check cache first
-        cache_key = f"voter_value_desc:{dimension.dimension_id}:{avg_position}:{priority}:{hash(str([p.reasoning for p in positions]))}"
+        # Check cache first — use hashlib.md5 for consistency across restarts
+        reasoning_blob = "|".join(p.reasoning for p in positions)
+        reasoning_hash = hashlib.md5(reasoning_blob.encode()).hexdigest()
+        cache_key = f"voter_value_desc:{dimension.dimension_id}:{avg_position:.1f}:{priority}:{reasoning_hash}"
         cached_desc = await cache_service.get(cache_key)
         if cached_desc:
             return cached_desc
@@ -453,8 +543,8 @@ class MatchingEngineService:
 
             response = await llm_service.call_llm(
                 messages,
-                max_tokens=100,
-                temperature=0.4
+                max_tokens=matching_config.llm_max_tokens_voter_value_description,
+                temperature=matching_config.llm_temperature_voter_description,
             )
 
             # Clean up the response
@@ -469,7 +559,7 @@ class MatchingEngineService:
                 description += '.'
 
             # Cache the result
-            await cache_service.set(cache_key, description, ttl_seconds=3600)
+            await cache_service.set(cache_key, description, ttl_seconds=matching_config.description_cache_ttl)
 
             self.logger.debug(f"Generated LLM voter value description: {description[:50]}...")
             return description
@@ -492,13 +582,13 @@ class MatchingEngineService:
         calculated_matches = [m for m in matches if m.match_percentage > 0]
         zero_matches = [m for m in matches if m.match_percentage == 0]
 
-        # Assign TOP to first 3 calculated matches (highest percentages)
-        for i, match in enumerate(calculated_matches[:3]):
+        # Assign TOP to first N calculated matches (highest percentages)
+        for i, match in enumerate(calculated_matches[:matching_config.top_candidate_count]):
             match.match_category = "TOP"
             self.logger.debug(f"Assigned TOP to candidate {match.candidate_id} with {match.match_percentage}% match")
 
         # Assign OTHER to remaining calculated matches
-        for match in calculated_matches[3:]:
+        for match in calculated_matches[matching_config.top_candidate_count:]:
             match.match_category = "OTHER"
             self.logger.debug(f"Assigned OTHER to candidate {match.candidate_id} with {match.match_percentage}% match")
 
@@ -577,6 +667,26 @@ class MatchingEngineService:
             return "basic_policy", max(0.6, base_confidence + confidence_adjustment)
         else:
             return "fallback", 0.3
+
+    @staticmethod
+    def _create_insufficient_responses_response(
+        submission: VoterSubmissionSchema, reason: str
+    ) -> MatchResultsResponseSchema:
+        """
+        Returned when the voter has not provided enough policy-relevant answers.
+        The payload shape is identical to a normal response so downstream
+        consumers are never broken — matches will simply be empty and the
+        processing_method will indicate why.
+        """
+        return MatchResultsResponseSchema(
+            citizen_id=submission.citizen_id,
+            election_id=submission.election_id,
+            voter_values_profile=[],
+            matches=[],
+            generated_at=datetime.now(),
+            processing_method="insufficient_responses",
+            confidence_score=0.0,
+        )
 
     @staticmethod
     def _create_no_candidates_response(submission: VoterSubmissionSchema) -> MatchResultsResponseSchema:

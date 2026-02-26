@@ -42,13 +42,17 @@ class MatchingEngineRouter:
             status_code=status.HTTP_200_OK
         )
 
-        self.router_manager.add_route(
-            path="/matching_engine/debug",
-            handler_method=self.debug_matching,
-            methods=["POST"],
-            tags=["Matching Engine Debug"],
-            status_code=status.HTTP_200_OK
-        )
+        # Debug endpoint — only registered when DEBUG_MODE is enabled in config.
+        # This prevents internal matching details from being exposed in production.
+        from app.core.config import settings
+        if settings.DEBUG_MODE:
+            self.router_manager.add_route(
+                path="/matching_engine/debug",
+                handler_method=self.debug_matching,
+                methods=["POST"],
+                tags=["Matching Engine Debug"],
+                status_code=status.HTTP_200_OK
+            )
 
     async def submit_voter_responses(self, submission: VoterSubmissionSchema):
         """
