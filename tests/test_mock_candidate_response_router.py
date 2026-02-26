@@ -17,7 +17,7 @@ class TestMockCandidatesResponseRouter:
     def test_get_mock_candidates_response(self, test_app):
         """Test the mock candidates endpoint with a valid election ID."""
         # Make the request with a test election ID
-        response = test_app.get("/api/v1/recommendations/elections/test-election/candidates")
+        response = test_app.get("/api/v2/recommendations/elections/test-election/candidates")
 
         # Verify the response
         assert response.status_code == 200
@@ -51,7 +51,7 @@ class TestMockCandidatesResponseRouter:
     def test_get_mock_candidates_response_different_election_id(self, test_app):
         """Test the mock candidates endpoint with a different election ID."""
         # Make the request with a different election ID
-        response = test_app.get("/api/v1/recommendations/elections/another-election/candidates")
+        response = test_app.get("/api/v2/recommendations/elections/another-election/candidates")
 
         # Verify the response
         assert response.status_code == 200

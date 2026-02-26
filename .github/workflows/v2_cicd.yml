@@ -224,3 +224,75 @@ jobs:
           KUBECONFIG=kubeconfig.yaml kubectl rollout status deployment/"$V2_DEPLOYMENT" \
             -n "$V2_NAMESPACE" \
             --timeout=120s
+
+      - name: Apply V2 Service and update shared Ingress for path-based routing
+        # V2 is exposed via path-based routing on the existing ai-civicmatch.electeddc.org domain:
+        #   /api/v1/* → elected-ai-service-development (V1)
+        #   /api/v2/* → civic-match-ai-v2-service      (V2)
+        # Both apps handle their own path prefixes internally, so no rewrite is needed.
+        # No new DNS record or TLS cert is required —
+        # the existing elected-ai-service-development-secret is reused.
+        # This step is idempotent and safe to re-run on every deploy.
+        run: |
+          export KUBECONFIG=kubeconfig.yaml
+          V2_DEPLOYMENT=${{ secrets.DEV_V2_DEPLOYMENT_NAME }}
+          V2_NAMESPACE=${{ secrets.DEV_NAMESPACE }}
+
+          # 1. Ensure the V2 ClusterIP Service exists
+          cat <<EOF | KUBECONFIG=kubeconfig.yaml kubectl apply -f -
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ${V2_DEPLOYMENT}-service
+            namespace: $V2_NAMESPACE
+            labels:
+              app: $V2_DEPLOYMENT
+              version: v2
+          spec:
+            type: ClusterIP
+            selector:
+              app: $V2_DEPLOYMENT
+            ports:
+              - name: http
+                port: 8000
+                targetPort: 8000
+          EOF
+
+          # 2. Update the shared ingress to route /api/v1 → V1 and /api/v2 → V2
+          cat <<EOF | KUBECONFIG=kubeconfig.yaml kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: elected-ai-service-development
+            namespace: $V2_NAMESPACE
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-production
+              nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+          spec:
+            ingressClassName: nginx
+            tls:
+              - hosts:
+                  - ai-civicmatch.electeddc.org
+                secretName: elected-ai-service-development-secret
+            rules:
+              - host: ai-civicmatch.electeddc.org
+                http:
+                  paths:
+                    - path: /api/v1
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: elected-ai-service-development
+                          port:
+                            number: 8000
+                    - path: /api/v2
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: ${V2_DEPLOYMENT}-service
+                          port:
+                            number: 8000
+          EOF
+          echo "✅ V2 Service and shared Ingress applied"
+          echo "   V1 → https://ai-civicmatch.electeddc.org/api/v1"
+          echo "   V2 → https://ai-civicmatch.electeddc.org/api/v2"
