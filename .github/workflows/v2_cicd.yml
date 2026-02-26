@@ -227,9 +227,10 @@ jobs:
 
       - name: Apply V2 Service and update shared Ingress for path-based routing
         # V2 is exposed via path-based routing on the existing ai-civicmatch.electeddc.org domain:
-        #   /api/v1/* → elected-ai-service-development (V1)
-        #   /api/v2/* → civic-match-ai-v2-service      (V2)
-        # Both apps handle their own path prefixes internally, so no rewrite is needed.
+        #   /api/v1/* → V1 service (elected-ai-service-development)
+        #   /api/v2/* → V2 service (civic-match-ai-v2-service)
+        # Both apps handle their own path prefixes internally (/api/v1 and /api/v2),
+        # so no nginx rewrite is needed — full paths are passed through as-is.
         # No new DNS record or TLS cert is required —
         # the existing elected-ai-service-development-secret is reused.
         # This step is idempotent and safe to re-run on every deploy.
@@ -282,7 +283,7 @@ jobs:
                       pathType: Prefix
                       backend:
                         service:
-                          name: elected-ai-service-development
+                          name: ${{ secrets.DEV_DEPLOYMENT_NAME }}-service
                           port:
                             number: 8000
                     - path: /api/v2
