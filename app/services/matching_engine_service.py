@@ -884,7 +884,7 @@ class MatchingEngineService:
         )
 
         # Get all candidates for this election
-        candidates = await candidate_service.fetch_candidates(submission.election_id)
+        candidates = await candidate_service.get_candidates_for_election(submission.election_id)
 
         # Filter to candidates with responses
         matchable_candidates = [c for c in candidates if len(c.responses) > 0]
