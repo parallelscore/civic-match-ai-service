@@ -4,7 +4,7 @@ import json
 from typing import List, Dict
 from openai import AsyncOpenAI
 from app.core.config import settings
-from app.schemas.voter_submission_schema import Response
+from app.schemas.voters_schema import VoterResponseItemSchema
 import logging
 
 
@@ -20,8 +20,8 @@ class LLMDirectMatchingService:
 
     async def calculate_match(
         self,
-        voter_responses: List[Response],
-        candidate_responses: List[Response],
+        voter_responses: List[VoterResponseItemSchema],
+        candidate_responses: List[VoterResponseItemSchema],
         voter_id: str,
         candidate_id: str
     ) -> Dict:
@@ -79,7 +79,7 @@ class LLMDirectMatchingService:
                 "confidence": 0.0
             }
 
-    def _format_responses(self, responses: List[Response]) -> str:
+    def _format_responses(self, responses: List[VoterResponseItemSchema]) -> str:
         """Format responses as Q&A pairs for the LLM"""
 
         formatted = []
