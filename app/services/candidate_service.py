@@ -54,26 +54,39 @@ class CandidateService:
                     self.logger.info(f"Retrieved {len(candidates_data)} candidate records")
 
                     # Process all candidates (no filtering based on completion status)
+                    # New lenient eligibility: candidates with any responses can be matched
                     candidates = []
-                    eligible_count = 0
-                    ineligible_count = 0
+                    matchable_count = 0
+                    no_response_count = 0
 
                     for candidate_data in candidates_data:
-                        # Check completion status for logging purposes
+                        # Check response availability for logging purposes
                         has_completed_profile = candidate_data.get("hasCompletedProfile", False)
                         has_completed_questionnaire = candidate_data.get("hasCompletedQuestionnaire", False)
                         responses = candidate_data.get("responses", [])
+                        response_count = len(responses)
 
-                        is_eligible = has_completed_profile and has_completed_questionnaire and len(responses) > 0
+                        # New eligibility: only requires responses, ignores completion flags
+                        is_matchable = response_count > 0
 
-                        if is_eligible:
-                            eligible_count += 1
-                            self.logger.debug(f"Candidate {candidate_data.get('candidateId', 'unknown')} is eligible for matching")
+                        if is_matchable:
+                            matchable_count += 1
+                            # Log if flags are false but we still have data (common scenario)
+                            if not has_completed_questionnaire and response_count > 0:
+                                self.logger.debug(
+                                    f"Candidate {candidate_data.get('candidateId', 'unknown')} has {response_count} responses "
+                                    f"(questionnaire flag={has_completed_questionnaire}) - will attempt matching"
+                                )
+                            else:
+                                self.logger.debug(
+                                    f"Candidate {candidate_data.get('candidateId', 'unknown')} is matchable with {response_count} responses"
+                                )
                         else:
-                            ineligible_count += 1
-                            self.logger.debug(f"Candidate {candidate_data.get('candidateId', 'unknown')} will receive 0% match - "
-                                              f"Profile: {has_completed_profile}, Questionnaire: {has_completed_questionnaire}, "
-                                              f"Responses: {len(responses)}")
+                            no_response_count += 1
+                            self.logger.debug(
+                                f"Candidate {candidate_data.get('candidateId', 'unknown')} has no responses - will receive 0% match. "
+                                f"Profile: {has_completed_profile}, Questionnaire: {has_completed_questionnaire}"
+                            )
 
                         # Process all candidates regardless of completion status
                         # Handle the candidate data structure from your ward8_election_data.json
@@ -118,8 +131,10 @@ class CandidateService:
                             )
                             continue
 
-                    self.logger.info(f"Successfully processed {len(candidates)} total candidates "
-                                     f"({eligible_count} eligible for matching, {ineligible_count} will receive 0% match)")
+                    self.logger.info(
+                        f"Successfully processed {len(candidates)} total candidates "
+                        f"({matchable_count} with responses for matching, {no_response_count} without responses)"
+                    )
                     return candidates
 
         except Exception as e:

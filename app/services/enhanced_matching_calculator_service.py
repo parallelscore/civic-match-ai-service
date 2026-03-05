@@ -36,11 +36,36 @@ class EnhancedMatchingCalculatorService:
         # Step 1a: Minimum overlap guard — if voter and candidate share too few
         # comparable dimensions, a score would be misleading. Return 0% instead.
         if len(dimension_matches) < matching_config.min_dimension_overlap:
-            self.logger.info(
+            self.logger.warning(
                 f"Candidate {candidate_profile.person_id} has only "
                 f"{len(dimension_matches)} overlapping dimension(s) "
-                f"(minimum {matching_config.min_dimension_overlap}) — returning 0%"
+                f"(minimum {matching_config.min_dimension_overlap}) — returning 0%. "
+                f"Overlapping dimensions: {[m.dimension_id for m in dimension_matches]}. "
+                f"This indicates insufficient policy position coverage for meaningful comparison."
             )
+            
+            # Create detailed explanation based on the scenario
+            voter_position_count = len(voter_profile.policy_positions)
+            candidate_position_count = len(candidate_profile.policy_positions)
+            overlap_count = len(dimension_matches)
+            
+            if overlap_count == 0:
+                # Zero overlap - different policy areas
+                explanation = (
+                    f"Your answers and this candidate's answers focus on different policy areas. "
+                    f"You answered questions covering {voter_position_count} policy topic(s), "
+                    f"and this candidate answered questions covering {candidate_position_count} policy topic(s), "
+                    f"but there's no overlap between the topics you both addressed. "
+                    f"Try answering more questions to increase the chance of finding common ground."
+                )
+            else:
+                # Some overlap but below minimum threshold
+                explanation = (
+                    f"We found only {overlap_count} policy topic(s) that both you and this candidate addressed, "
+                    f"which isn't enough to calculate a reliable match score (minimum {matching_config.min_dimension_overlap} required). "
+                    f"Answering more questions would help us better compare your positions."
+                )
+            
             return EnhancedMatchResult(
                 voter_id=voter_profile.person_id,
                 candidate_id=candidate_profile.person_id,
@@ -48,10 +73,7 @@ class EnhancedMatchingCalculatorService:
                 confidence_weighted_percentage=0,
                 dimension_matches=dimension_matches,
                 consistency_penalty_applied=0.0,
-                match_explanation=(
-                    "Not enough comparable policy positions found between your "
-                    "responses and this candidate to calculate a meaningful match."
-                ),
+                match_explanation=explanation,
                 top_aligned_dimensions=[],
             )
 
@@ -123,20 +145,52 @@ class EnhancedMatchingCalculatorService:
         }
 
         if len(voter_positions) != len(voter_lookup):
+            filtered_count = len(voter_positions) - len(voter_lookup)
             self.logger.debug(
-                f"Filtered out {len(voter_positions) - len(voter_lookup)} low-confidence "
+                f"Filtered out {filtered_count} low-confidence "
                 f"voter positions (threshold={matching_config.min_confidence_threshold})"
             )
+            # Log which dimensions were filtered out for debugging
+            filtered_dimensions = [pos.dimension_id for pos in voter_positions 
+                                  if pos.confidence < matching_config.min_confidence_threshold]
+            self.logger.debug(f"Filtered voter dimensions: {filtered_dimensions}")
+            
         if len(candidate_positions) != len(candidate_lookup):
+            filtered_count = len(candidate_positions) - len(candidate_lookup)
             self.logger.debug(
-                f"Filtered out {len(candidate_positions) - len(candidate_lookup)} low-confidence "
+                f"Filtered out {filtered_count} low-confidence "
                 f"candidate positions (threshold={matching_config.min_confidence_threshold})"
             )
+            # Log which dimensions were filtered out for debugging
+            filtered_dimensions = [pos.dimension_id for pos in candidate_positions 
+                                  if pos.confidence < matching_config.min_confidence_threshold]
+            self.logger.debug(f"Filtered candidate dimensions: {filtered_dimensions}")
 
         dimension_matches = []
 
         # Find common dimensions
         common_dimensions = set(voter_lookup.keys()) & set(candidate_lookup.keys())
+        
+        # Enhanced logging for dimension overlap investigation
+        self.logger.debug(
+            f"Dimension overlap analysis - "
+            f"Voter dimensions: {sorted(voter_lookup.keys())}, "
+            f"Candidate dimensions: {sorted(candidate_lookup.keys())}, "
+            f"Common dimensions: {sorted(common_dimensions)}"
+        )
+        
+        # Log warning if no common dimensions found
+        if not common_dimensions:
+            self.logger.warning(
+                f"Zero dimension overlap detected! "
+                f"Voter has {len(voter_lookup)} dimensions after filtering: {sorted(voter_lookup.keys())}, "
+                f"Candidate has {len(candidate_lookup)} dimensions after filtering: {sorted(candidate_lookup.keys())}. "
+                f"This will result in 0% match. Possible causes: "
+                f"(1) Voter answered too few questions, "
+                f"(2) Voter/candidate answers map to different policy dimensions, "
+                f"(3) Confidence threshold too high ({matching_config.min_confidence_threshold}), "
+                f"(4) Dimension mapping issue in position inference"
+            )
 
         for dimension_id in common_dimensions:
             voter_pos = voter_lookup[dimension_id]

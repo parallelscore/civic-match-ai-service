@@ -43,13 +43,13 @@ class CandidateResponseSchema(CamelModel):
 
     def is_eligible_for_matching(self) -> bool:
         """
-        Check if candidate is eligible for matching based on completion status.
+        Check if candidate is eligible for matching based on actual response data.
+        
+        Prioritizes actual data over completion flags - if they have responses,
+        we can attempt to match them regardless of profile/questionnaire flags.
+        This handles cases where backend flags may be out of sync with actual data.
 
         Returns:
-            bool: True if candidate has completed profile and questionnaire and has responses
+            bool: True if candidate has any responses to match against
         """
-        return (
-                self.has_completed_profile is True and
-                self.has_completed_questionnaire is True and
-                len(self.responses) > 0
-        )
+        return len(self.responses) > 0

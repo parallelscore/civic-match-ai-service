@@ -58,12 +58,14 @@ class MatchingEngineService:
                 self.logger.warning(f"No candidates found for election {submission.election_id}")
                 return self._create_no_candidates_response(submission)
 
+            # With lenient eligibility: eligible = has responses, ineligible = no responses
             eligible_candidates = [c for c in candidates if c.is_eligible_for_matching()]
             ineligible_candidates = [c for c in candidates if not c.is_eligible_for_matching()]
 
             self.logger.info(
                 f"Candidates: {len(candidates)} total, "
-                f"{len(eligible_candidates)} eligible, {len(ineligible_candidates)} ineligible"
+                f"{len(eligible_candidates)} with responses (matchable), "
+                f"{len(ineligible_candidates)} without responses"
             )
 
             # ── Step 3: Discover policy dimensions ──────────────────────
@@ -85,16 +87,42 @@ class MatchingEngineService:
                 candidate_profiles = await self._create_candidate_policy_profiles(
                     eligible_candidates, election_analysis
                 )
+                
+                # Log dimension coverage comparison for debugging zero overlap issues
+                voter_dimensions_after_filter = sorted(set(
+                    pos.dimension_id for pos in voter_profile.policy_positions 
+                    if pos.confidence >= matching_config.min_confidence_threshold
+                ))
+                self.logger.info(
+                    f"Starting matching with voter dimensions (after confidence filter): {voter_dimensions_after_filter}"
+                )
+                
                 for candidate_profile in candidate_profiles:
+                    candidate_dimensions_after_filter = sorted(set(
+                        pos.dimension_id for pos in candidate_profile.policy_positions 
+                        if pos.confidence >= matching_config.min_confidence_threshold
+                    ))
+                    common_dims = sorted(set(voter_dimensions_after_filter) & set(candidate_dimensions_after_filter))
+                    
+                    # Log potential zero overlap issues BEFORE matching
+                    if len(common_dims) < matching_config.min_dimension_overlap:
+                        self.logger.warning(
+                            f"PRE-MATCH WARNING: Candidate {candidate_profile.person_id} has only "
+                            f"{len(common_dims)} common dimensions with voter (minimum {matching_config.min_dimension_overlap}). "
+                            f"Voter dimensions: {voter_dimensions_after_filter}, "
+                            f"Candidate dimensions: {candidate_dimensions_after_filter}, "
+                            f"Common: {common_dims}. This will result in 0% match."
+                        )
+                    
                     match_result = await enhanced_matching_calculator_service.calculate_enhanced_match(
                         voter_profile, candidate_profile
                     )
                     enhanced_matches.append(self._convert_to_output_format(match_result))
 
-            # Ineligible candidates always get 0 %
+            # Candidates without responses get 0%
             for candidate in ineligible_candidates:
                 enhanced_matches.append(self._create_zero_match_result(candidate))
-                self.logger.debug(f"0% match assigned to ineligible candidate {candidate.candidate_id}")
+                self.logger.debug(f"0% match assigned to candidate {candidate.candidate_id} (no responses)")
 
             # ── Step 6: Sort and categorise ─────────────────────────────
             enhanced_matches.sort(key=lambda x: x.match_percentage, reverse=True)
@@ -102,7 +130,7 @@ class MatchingEngineService:
 
             self.logger.info(
                 f"Returning {len(enhanced_matches)} matches "
-                f"({len(eligible_candidates)} scored, {len(ineligible_candidates)} at 0%)"
+                f"({len(eligible_candidates)} attempted matching, {len(ineligible_candidates)} without responses)"
             )
 
             # ── Step 7: Voter values profile & quality metadata ─────────
@@ -110,7 +138,7 @@ class MatchingEngineService:
                 voter_profile, election_analysis
             )
             processing_method, confidence = self._determine_processing_quality(
-                enhanced_matches, election_analysis
+                enhanced_matches, election_analysis, len(eligible_candidates), len(ineligible_candidates)
             )
 
             self.logger.info(f"Processing method: {processing_method}, Confidence: {confidence:.2f}")
@@ -277,6 +305,25 @@ class MatchingEngineService:
         # Analyze consistency
         tensions, consistency_score = consistency_analyzer_service.analyze_position_consistency(policy_positions)
 
+        # Log voter dimension coverage for debugging zero overlap issues
+        voter_dimension_ids = sorted(set(pos.dimension_id for pos in policy_positions))
+        self.logger.info(
+            f"Voter profile created with {len(policy_positions)} positions across "
+            f"{len(voter_dimension_ids)} unique dimensions: {voter_dimension_ids}"
+        )
+        
+        # Log any low-confidence positions that might be filtered out later
+        low_confidence_positions = [
+            pos for pos in policy_positions 
+            if pos.confidence < matching_config.min_confidence_threshold
+        ]
+        if low_confidence_positions:
+            self.logger.warning(
+                f"Voter has {len(low_confidence_positions)} positions below confidence threshold "
+                f"({matching_config.min_confidence_threshold}): "
+                f"{[pos.dimension_id for pos in low_confidence_positions]}"
+            )
+
         return PersonPolicyProfile(
             person_id=submission.citizen_id,
             person_type="voter",
@@ -355,6 +402,25 @@ class MatchingEngineService:
 
         # Analyze consistency
         tensions, consistency_score = consistency_analyzer_service.analyze_position_consistency(policy_positions)
+
+        # Log candidate dimension coverage for debugging zero overlap issues
+        candidate_dimension_ids = sorted(set(pos.dimension_id for pos in policy_positions))
+        self.logger.info(
+            f"Candidate {candidate.candidate_id} profile created with {len(policy_positions)} positions across "
+            f"{len(candidate_dimension_ids)} unique dimensions: {candidate_dimension_ids}"
+        )
+        
+        # Log any low-confidence positions that might be filtered out later
+        low_confidence_positions = [
+            pos for pos in policy_positions 
+            if pos.confidence < matching_config.min_confidence_threshold
+        ]
+        if low_confidence_positions:
+            self.logger.warning(
+                f"Candidate {candidate.candidate_id} has {len(low_confidence_positions)} positions below confidence threshold "
+                f"({matching_config.min_confidence_threshold}): "
+                f"{[pos.dimension_id for pos in low_confidence_positions]}"
+            )
 
         return PersonPolicyProfile(
             person_id=candidate.candidate_id,
@@ -629,9 +695,24 @@ class MatchingEngineService:
             return f"You {stance} {dimension.name.lower()} based on your responses to related questions."
 
     @staticmethod
-    def _determine_processing_quality(matches: List, election_analysis) -> tuple[str, float]:
-        """Determine processing method and confidence"""
-
+    def _determine_processing_quality(
+        matches: List, 
+        election_analysis, 
+        eligible_count: int = 0,
+        ineligible_count: int = 0
+    ) -> tuple[str, float]:
+        """Determine processing method and confidence
+        
+        Args:
+            matches: List of candidate matches
+            election_analysis: Election analysis data
+            eligible_count: Number of candidates that passed eligibility check
+            ineligible_count: Number of candidates that failed eligibility check
+            
+        Returns:
+            Tuple of (processing_method, confidence_score)
+        """
+        
         if not matches:
             return "no_matches", 0.0
 
@@ -640,7 +721,13 @@ class MatchingEngineService:
         zero_matches = [m for m in matches if m.match_percentage == 0]
 
         if not calculated_matches:
-            return "no_eligible_candidates", 0.0
+            # Distinguish between truly ineligible candidates vs eligible with insufficient overlap
+            if eligible_count == 0:
+                # All candidates failed eligibility check (no profile/questionnaire completion)
+                return "no_eligible_candidates", 0.0
+            else:
+                # Candidates were eligible but all scored 0% due to insufficient dimension overlap
+                return "insufficient_dimension_overlap", 0.0
 
         # Check if we have a good dimension discovery
         avg_dimension_confidence = sum(d.confidence for d in election_analysis.discovered_dimensions) / len(election_analysis.discovered_dimensions)
@@ -718,11 +805,27 @@ class MatchingEngineService:
         )
 
     def _create_zero_match_result(self, candidate):
-        """Create a 0% match result for ineligible candidates."""
+        """Create a 0% match result for candidates with no response data.
+        
+        Note: With lenient eligibility (responses > 0), this is only called for
+        candidates who have truly provided zero responses.
+        """
         from app.schemas.voters_schema import CandidateMatchSchema, IssueMatchDetailSchema
 
-        # Create explanation for why the match is 0%
-        explanation = "This candidate has not completed their profile and/or questionnaire, so no policy comparison could be made."
+        # Determine why this candidate has 0% match
+        response_count = len(candidate.responses) if hasattr(candidate, 'responses') else 0
+        
+        if response_count == 0:
+            explanation = (
+                "This candidate has not answered any questions yet, "
+                "so we cannot compare their policy positions with yours."
+            )
+        else:
+            # Shouldn't happen with new eligibility logic, but handle gracefully
+            explanation = (
+                "Not enough information available to compare your policy positions "
+                "with this candidate's positions."
+            )
 
         return CandidateMatchSchema(
             candidate_id=candidate.candidate_id,
