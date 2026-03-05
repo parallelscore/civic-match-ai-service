@@ -353,9 +353,21 @@ class MatchingEngineService:
         for mapping in election_analysis.question_mappings:
             question_to_dimension[mapping.question] = mapping
 
+        self.logger.debug(
+            f"Processing candidate {candidate.candidate_id}: "
+            f"{len(candidate.responses)} responses, "
+            f"{len(question_to_dimension)} mapped questions"
+        )
+
         # Process each candidate response
+        responses_processed = 0
+        responses_skipped_no_mapping = 0
+        responses_skipped_no_dimension = 0
+        responses_skipped_none_position = 0
+        
         for response in candidate.responses:
             question = response.question
+            responses_processed += 1
 
             if question in question_to_dimension:
                 mapping = question_to_dimension[question]
@@ -377,7 +389,19 @@ class MatchingEngineService:
                     )
                     if position is not None:
                         policy_positions.append(position)
-
+                    else:
+                        responses_skipped_none_position += 1
+                        self.logger.debug(
+                            f"Candidate {candidate.candidate_id} response #{responses_processed}: "
+                            f"Position inference returned None for question '{question[:60]}...' "
+                            f"with answer='{str(response.answer)[:50]}...'"
+                        )
+                else:
+                    responses_skipped_no_dimension += 1
+                    self.logger.warning(
+                        f"Candidate {candidate.candidate_id} response #{responses_processed}: "
+                        f"Dimension '{mapping.primary_dimension_id}' not found for question '{question[:60]}...'"
+                    )
                     # Handle secondary dimensions
                     for sec_dim_id in mapping.secondary_dimension_ids:
                         sec_dimension = next(
@@ -400,6 +424,16 @@ class MatchingEngineService:
                                 sec_position.intensity_multiplier *= sec_weight
                                 policy_positions.append(sec_position)
 
+        # Log processing summary for diagnostics
+        self.logger.info(
+            f"Candidate {candidate.candidate_id} response processing summary: "
+            f"Total={responses_processed}, "
+            f"Positions created={len(policy_positions)}, "
+            f"Skipped (no mapping)={responses_skipped_no_mapping}, "
+            f"Skipped (no dimension)={responses_skipped_no_dimension}, "
+            f"Skipped (None returned)={responses_skipped_none_position}"
+        )
+        
         # Analyze consistency
         tensions, consistency_score = consistency_analyzer_service.analyze_position_consistency(policy_positions)
 
