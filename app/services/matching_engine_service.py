@@ -909,10 +909,11 @@ class MatchingEngineService:
             for value in voter_values_raw
         ]
 
-        # Calculate LLM-based matches for each candidate
-        matches = []
-
-        for candidate in matchable_candidates:
+        # Calculate LLM-based matches for ALL candidates in PARALLEL
+        import asyncio
+        
+        async def match_candidate(candidate):
+            """Match a single candidate with error handling"""
             try:
                 # Call enhanced LLM direct matching
                 llm_result = await llm_direct_matching_service.calculate_match(
@@ -948,29 +949,56 @@ class MatchingEngineService:
                     overall_explanation=llm_result["explanation"]
                 )
 
-                matches.append(match_result)
-
                 self.logger.debug(
                     f"Enhanced LLM match for {candidate.name}: {llm_result['match_percentage']:.1f}% "
                     f"({len(issue_matches)} issues analyzed)"
                 )
 
+                return match_result
+
             except Exception as e:
                 self.logger.error(
                     f"Failed to calculate LLM match for candidate {candidate.candidate_id}: {str(e)}"
                 )
-                # Add 0% match result for failed candidates
-                matches.append(
-                    CandidateMatchSchema(
-                        candidate_id=candidate.candidate_id,
-                        match_percentage=0,
-                        match_strength_visual=0.0,
-                        match_category="UNMATCH",
-                        top_aligned_issues=[],
-                        issue_matches=[],
-                        overall_explanation=f"Unable to calculate match: {str(e)}"
-                    )
+                # Return 0% match result for failed candidates
+                return CandidateMatchSchema(
+                    candidate_id=candidate.candidate_id,
+                    match_percentage=0,
+                    match_strength_visual=0.0,
+                    match_category="UNMATCH",
+                    top_aligned_issues=[],
+                    issue_matches=[],
+                    overall_explanation=f"Unable to calculate match: {str(e)}"
                 )
+
+        # Process all candidates in parallel
+        self.logger.info(f"Starting parallel LLM matching for {len(matchable_candidates)} candidates")
+        matches = await asyncio.gather(*[match_candidate(c) for c in matchable_candidates])
+        matches = list(matches)  # Convert from tuple to list
+
+        # Sort by match percentage descending
+        matches.sort(key=lambda x: x.match_percentage, reverse=True)
+
+        # Assign match categories (TOP, OTHER, UNMATCH)
+        self._assign_match_categories(matches)
+
+        # Determine processing method and confidence
+        if not matches:
+            processing_method = "no_eligible_candidates"
+            confidence = 0.0
+        elif all(m.match_percentage == 0 for m in matches):
+            processing_method = "no_common_questions"
+            confidence = 0.0
+        else:
+            processing_method = "llm_direct_matching"
+            # Use average of successful match percentages as confidence proxy
+            successful_matches = [m for m in matches if m.match_percentage > 0]
+            confidence = (sum(m.match_percentage for m in successful_matches) / len(successful_matches) / 100.0) if successful_matches else 0.0
+
+        self.logger.info(
+            f"Parallel LLM matching complete: {len(matches)} results, "
+            f"processing_method={processing_method}, confidence={confidence:.2f}"
+        )
 
         return MatchResultsResponseSchema(
             citizen_id=submission.citizen_id,
