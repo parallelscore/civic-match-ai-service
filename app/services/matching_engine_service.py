@@ -12,6 +12,7 @@ from app.services.position_inference_service import position_inference_service
 from app.services.consistency_analyzer_service import consistency_analyzer_service
 from app.services.policy_dimension_discovery_service import policy_dimension_discovery_service
 from app.services.enhanced_matching_calculator_service import enhanced_matching_calculator_service
+from app.services.llm_direct_matching_service import llm_direct_matching_service
 from app.schemas.policy_matching_schema import PersonPolicyProfile, PolicyPosition, EnhancedMatchResult
 from app.schemas.voters_schema import VoterSubmissionSchema, MatchResultsResponseSchema, VoterValueProfileSchema
 
@@ -870,6 +871,130 @@ class MatchingEngineService:
             issue_matches=[],
             overall_explanation=explanation
         )
+
+    async def process_voter_submission_llm(self, submission: VoterSubmissionSchema) -> MatchResultsResponseSchema:
+        """
+        Simplified LLM-based matching that directly compares voter and candidate responses.
+        Bypasses dimension discovery and position inference complexity.
+        """
+
+        self.logger.info(
+            f"Processing LLM direct match for voter {submission.voter_id} in election {submission.election_id}"
+        )
+
+        # Get all candidates for this election
+        candidates = await candidate_service.fetch_candidates(submission.election_id)
+
+        # Filter to candidates with responses
+        matchable_candidates = [c for c in candidates if len(c.responses) > 0]
+
+        self.logger.info(
+            f"Found {len(matchable_candidates)} candidates with responses for LLM matching"
+        )
+
+        # Calculate LLM-based matches for each candidate
+        enhanced_matches = []
+
+        for candidate in matchable_candidates:
+            try:
+                # Call LLM direct matching
+                llm_result = await llm_direct_matching_service.calculate_match(
+                    voter_responses=submission.responses,
+                    candidate_responses=candidate.responses,
+                    voter_id=submission.voter_id,
+                    candidate_id=candidate.candidate_id
+                )
+
+                # Convert to EnhancedMatchResult schema
+                match_result = EnhancedMatchResult(
+                    voter_id=submission.voter_id,
+                    candidate_id=candidate.candidate_id,
+                    candidate_name=candidate.name,
+                    match_percentage=llm_result["match_percentage"],
+                    category=self._categorize_match(llm_result["match_percentage"]),
+                    alignment_summary=llm_result["alignment_summary"],
+                    explanation=llm_result["explanation"],
+                    confidence_score=llm_result["confidence"],
+                    common_policy_count=llm_result["common_questions"],
+                    consistency_score=1.0,  # No consistency penalty in direct matching
+                    top_aligned_issues=[],
+                    issue_matches=[],
+                    overall_explanation=llm_result["explanation"]
+                )
+
+                enhanced_matches.append(match_result)
+
+                self.logger.debug(
+                    f"LLM match result for {candidate.name}: {llm_result['match_percentage']:.1f}%"
+                )
+
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to calculate LLM match for candidate {candidate.candidate_id}: {str(e)}"
+                )
+                # Add 0% match result for failed candidates
+                enhanced_matches.append(
+                    EnhancedMatchResult(
+                        voter_id=submission.voter_id,
+                        candidate_id=candidate.candidate_id,
+                        candidate_name=candidate.name,
+                        match_percentage=0.0,
+                        category="UNMATCH",
+                        alignment_summary="Unable to calculate match",
+                        explanation=f"Technical error during matching: {str(e)}",
+                        confidence_score=0.0,
+                        common_policy_count=0,
+                        consistency_score=0.0,
+                        top_aligned_issues=[],
+                        issue_matches=[],
+                        overall_explanation=f"Error: {str(e)}"
+                    )
+                )
+
+        # Sort by match percentage descending
+        enhanced_matches.sort(key=lambda x: x.match_percentage, reverse=True)
+
+        # Determine processing method
+        if not enhanced_matches:
+            processing_method = "no_eligible_candidates"
+            confidence = 0.0
+        elif all(m.match_percentage == 0 for m in enhanced_matches):
+            processing_method = "no_common_questions"
+            confidence = 0.0
+        else:
+            processing_method = "llm_direct_matching"
+            confidence = sum(m.confidence_score for m in enhanced_matches) / len(enhanced_matches) if enhanced_matches else 0.0
+
+        self.logger.info(
+            f"LLM matching complete: {len(enhanced_matches)} results, "
+            f"processing_method={processing_method}, avg_confidence={confidence:.2f}"
+        )
+
+        # Generate simple voter values (no complex LLM-based profiles)
+        voter_values = [
+            VoterValueProfileSchema(
+                dimension="Overall Policy Preferences",
+                score=50.0,  # Neutral
+                description=f"Based on your {len(submission.responses)} responses to the questionnaire."
+            )
+        ]
+
+        return MatchResultsResponseSchema(
+            voter_id=submission.voter_id,
+            matches=enhanced_matches,
+            voter_values=voter_values,
+            processing_method=processing_method,
+            processing_confidence=confidence
+        )
+
+    def _categorize_match(self, match_percentage: float) -> str:
+        """Categorize match based on percentage"""
+        if match_percentage >= 70:
+            return "TOP"
+        elif match_percentage >= 40:
+            return "OTHER"
+        else:
+            return "UNMATCH"
 
     # Utility methods
     @staticmethod
