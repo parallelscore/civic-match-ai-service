@@ -877,9 +877,10 @@ class MatchingEngineService:
         Simplified LLM-based matching that directly compares voter and candidate responses.
         Bypasses dimension discovery and position inference complexity.
         """
+        from app.schemas.voters_schema import CandidateMatchSchema
 
         self.logger.info(
-            f"Processing LLM direct match for voter {submission.voter_id} in election {submission.election_id}"
+            f"Processing LLM direct match for voter {submission.citizen_id} in election {submission.election_id}"
         )
 
         # Get all candidates for this election
@@ -893,7 +894,7 @@ class MatchingEngineService:
         )
 
         # Calculate LLM-based matches for each candidate
-        enhanced_matches = []
+        matches = []
 
         for candidate in matchable_candidates:
             try:
@@ -901,28 +902,22 @@ class MatchingEngineService:
                 llm_result = await llm_direct_matching_service.calculate_match(
                     voter_responses=submission.responses,
                     candidate_responses=candidate.responses,
-                    voter_id=submission.voter_id,
+                    voter_id=submission.citizen_id,
                     candidate_id=candidate.candidate_id
                 )
 
-                # Convert to EnhancedMatchResult schema
-                match_result = EnhancedMatchResult(
-                    voter_id=submission.voter_id,
+                # Convert to CandidateMatchSchema (correct API format)
+                match_result = CandidateMatchSchema(
                     candidate_id=candidate.candidate_id,
-                    candidate_name=candidate.name,
-                    match_percentage=llm_result["match_percentage"],
-                    category=self._categorize_match(llm_result["match_percentage"]),
-                    alignment_summary=llm_result["alignment_summary"],
-                    explanation=llm_result["explanation"],
-                    confidence_score=llm_result["confidence"],
-                    common_policy_count=llm_result["common_questions"],
-                    consistency_score=1.0,  # No consistency penalty in direct matching
-                    top_aligned_issues=[],
-                    issue_matches=[],
+                    match_percentage=int(llm_result["match_percentage"]),
+                    match_strength_visual=llm_result["match_percentage"] / 100.0,
+                    match_category="PENDING",  # Will be assigned later
+                    top_aligned_issues=[],  # LLM doesn't break down by issues
+                    issue_matches=[],  # LLM doesn't break down by issues
                     overall_explanation=llm_result["explanation"]
                 )
 
-                enhanced_matches.append(match_result)
+                matches.append(match_result)
 
                 self.logger.debug(
                     f"LLM match result for {candidate.name}: {llm_result['match_percentage']:.1f}%"
@@ -933,58 +928,59 @@ class MatchingEngineService:
                     f"Failed to calculate LLM match for candidate {candidate.candidate_id}: {str(e)}"
                 )
                 # Add 0% match result for failed candidates
-                enhanced_matches.append(
-                    EnhancedMatchResult(
-                        voter_id=submission.voter_id,
+                matches.append(
+                    CandidateMatchSchema(
                         candidate_id=candidate.candidate_id,
-                        candidate_name=candidate.name,
-                        match_percentage=0.0,
-                        category="UNMATCH",
-                        alignment_summary="Unable to calculate match",
-                        explanation=f"Technical error during matching: {str(e)}",
-                        confidence_score=0.0,
-                        common_policy_count=0,
-                        consistency_score=0.0,
+                        match_percentage=0,
+                        match_strength_visual=0.0,
+                        match_category="UNMATCH",
                         top_aligned_issues=[],
                         issue_matches=[],
-                        overall_explanation=f"Error: {str(e)}"
+                        overall_explanation=f"Unable to calculate match: {str(e)}"
                     )
                 )
 
         # Sort by match percentage descending
-        enhanced_matches.sort(key=lambda x: x.match_percentage, reverse=True)
+        matches.sort(key=lambda x: x.match_percentage, reverse=True)
 
-        # Determine processing method
-        if not enhanced_matches:
+        # Assign match categories (TOP, OTHER, UNMATCH)
+        self._assign_match_categories(matches)
+
+        # Determine processing method and confidence
+        if not matches:
             processing_method = "no_eligible_candidates"
             confidence = 0.0
-        elif all(m.match_percentage == 0 for m in enhanced_matches):
+        elif all(m.match_percentage == 0 for m in matches):
             processing_method = "no_common_questions"
             confidence = 0.0
         else:
             processing_method = "llm_direct_matching"
-            confidence = sum(m.confidence_score for m in enhanced_matches) / len(enhanced_matches) if enhanced_matches else 0.0
+            # Use average of successful match percentages as confidence proxy
+            successful_matches = [m for m in matches if m.match_percentage > 0]
+            confidence = (sum(m.match_percentage for m in successful_matches) / len(successful_matches) / 100.0) if successful_matches else 0.0
 
         self.logger.info(
-            f"LLM matching complete: {len(enhanced_matches)} results, "
-            f"processing_method={processing_method}, avg_confidence={confidence:.2f}"
+            f"LLM matching complete: {len(matches)} results, "
+            f"processing_method={processing_method}, confidence={confidence:.2f}"
         )
 
         # Generate simple voter values (no complex LLM-based profiles)
-        voter_values = [
+        voter_values_profile = [
             VoterValueProfileSchema(
-                dimension="Overall Policy Preferences",
-                score=50.0,  # Neutral
-                description=f"Based on your {len(submission.responses)} responses to the questionnaire."
+                issue="Overall Policy Preferences",
+                description=f"Based on your {len(submission.responses)} responses to the questionnaire.",
+                priority_level="Medium"
             )
         ]
 
         return MatchResultsResponseSchema(
-            voter_id=submission.voter_id,
-            matches=enhanced_matches,
-            voter_values=voter_values,
+            citizen_id=submission.citizen_id,
+            election_id=submission.election_id,
+            voter_values_profile=voter_values_profile,
+            matches=matches,
+            generated_at=datetime.now(),
             processing_method=processing_method,
-            processing_confidence=confidence
+            confidence_score=confidence
         )
 
     def _categorize_match(self, match_percentage: float) -> str:
