@@ -159,7 +159,7 @@ class MatchingConfiguration(BaseModel):
     # ------------------------------------------------------------------ #
     # CACHING
     # ------------------------------------------------------------------ #
-    cache_dimension_discovery: bool = Field(default=True)
+    cache_dimension_discovery: bool = Field(default=False)  # TEMPORARILY DISABLED - cache bug fix in progress
     cache_position_inference: bool = Field(default=True)
     dimension_cache_ttl: int = Field(default=86400)   # 24 hours
     position_cache_ttl: int = Field(default=3600)     # 1 hour
